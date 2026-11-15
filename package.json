@@ -1,0 +1,52 @@
+{
+  "name": "moscow-life",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit",
+    "e2e": "playwright test",
+    "lint": "biome lint src e2e scripts",
+    "lint:fix": "biome lint --write src e2e scripts",
+    "format": "biome format --write src e2e scripts",
+    "format:check": "biome format src e2e scripts",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "e2e:visual": "playwright test e2e/visual.spec.ts",
+    "e2e:a11y": "playwright test e2e/a11y.spec.ts",
+    "e2e:update-snapshots": "playwright test e2e/visual.spec.ts --update-snapshots",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
+    "qa": "node scripts/qa-report.mjs"
+  },
+  "dependencies": {
+    "framer-motion": "^14.14.0",
+    "lucide-react": "^1.72.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tone": "^15.1.22",
+    "web-vitals": "^6.2.3",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@biomejs/biome": "^2.6.7",
+    "@playwright/test": "^1.65.1",
+    "@tailwindcss/vite": "^4.3.5",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.10",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}

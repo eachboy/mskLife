@@ -1,0 +1,366 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Manrope', system-ui, sans-serif;
+  --font-display: 'Unbounded', 'Manrope', sans-serif;
+  --color-ink: #1b1530;
+  --color-dusk: #2a2150;
+  --color-peach: #ffb27a;
+  --color-rose: #f06a8f;
+  --color-cream: #fff3e2;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #120e24;
+  color: #fff3e2;
+  font-family: var(--font-sans);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* в @layer base: иначе неслоёвое правило перебивает утилиты Tailwind (bg-*, text-*) на всех кнопках */
+@layer base {
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    background: none;
+    border: 0;
+  }
+}
+button:focus-visible,
+input:focus-visible,
+[role='slider']:focus-visible {
+  outline: 2px solid #ffb27a;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ───────── освещение (значения ставит LightingController) ───────── */
+.scene-root {
+  --sky-top: #5aa2e0;
+  --sky-mid: #97cdee;
+  --sky-bot: #d9eef6;
+  --tint: #ffffff;
+  --tint-a: 0;
+  --grade: #ffd9b0;
+  --grade-a: 0.18;
+  --night: 0;
+  --lamps: 0;
+  --golden: 0;
+  --bright: 1;
+  --stars: 0;
+  --cloud: 0.2;
+  --snow: 0;
+  --wet: 0;
+  --fog: 0;
+  --wind: 0.2;
+  --px: 0;
+  --py: 0;
+  --sun-x: 0.5;
+  --sun-y: 0.3;
+  --moon-x: 0.5;
+  --moon-y: 0.3;
+}
+
+.sky-top { stop-color: var(--sky-top); }
+.sky-mid { stop-color: var(--sky-mid); }
+.sky-bot { stop-color: var(--sky-bot); }
+.lamp-lit { opacity: var(--lamps); }
+.win-lit { opacity: calc(0.12 + var(--lamps) * 0.88); }
+.snow-cap { opacity: var(--snow); }
+.wet-sheen { opacity: calc(var(--wet) * 0.85); }
+.stars { opacity: var(--stars); }
+.art-layer { filter: brightness(var(--bright)); transition: filter 1s linear; }
+.tint-layer { background: var(--tint); opacity: var(--tint-a); mix-blend-mode: multiply; pointer-events: none; }
+
+/* ───────── lofi-пост-обработка ───────── */
+.grade-layer { background: var(--grade, #ffd9b0); opacity: var(--grade-a, 0.18); mix-blend-mode: multiply; pointer-events: none; }
+.vignette { background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(25, 12, 30, 0.45) 100%); }
+.bloom { filter: blur(16px); mix-blend-mode: screen; opacity: 0.36; }
+.low-perf .bloom { display: none; }
+.film-grain {
+  opacity: 0.045;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain 1.2s steps(8) infinite;
+}
+.low-perf .film-grain { animation: none; opacity: 0.04; }
+/* сдвиг на целые пиксели — без субпиксельных полос и мерцания */
+@keyframes grain {
+  0% { transform: translate(0, 0); }
+  12.5% { transform: translate(-37px, 23px); }
+  25% { transform: translate(19px, -41px); }
+  37.5% { transform: translate(-13px, -17px); }
+  50% { transform: translate(43px, 31px); }
+  62.5% { transform: translate(-29px, 7px); }
+  75% { transform: translate(11px, 47px); }
+  87.5% { transform: translate(-47px, -29px); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes leaf-fall {
+  0% { transform: translate(0, -40px) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translate(var(--drift, 120px), 940px) rotate(540deg); opacity: 0.9; }
+}
+@keyframes haze-drift { from { transform: translateX(-60px); } to { transform: translateX(60px); } }
+@keyframes drop-run { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 0.8; } 100% { transform: translateY(120px); opacity: 0; } }
+.low-perf .leaf, .low-perf .haze { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .film-grain { animation: none; } }
+
+/* ───────── анимации сцены ───────── */
+@keyframes ent-move {
+  from { transform: translate(var(--x0), var(--y)) scale(var(--s)); }
+  to { transform: translate(var(--x1), var(--y)) scale(var(--s)); }
+}
+.ent {
+  animation-name: ent-move;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  transform-box: fill-box;
+}
+@keyframes walk-leg-a { 0%, 100% { transform: rotate(26deg); } 50% { transform: rotate(-26deg); } }
+@keyframes walk-leg-b { 0%, 100% { transform: rotate(-26deg); } 50% { transform: rotate(26deg); } }
+@keyframes walk-arm-a { 0%, 100% { transform: rotate(-22deg); } 50% { transform: rotate(22deg); } }
+@keyframes walk-arm-b { 0%, 100% { transform: rotate(22deg); } 50% { transform: rotate(-22deg); } }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 25%, 75% { transform: translateY(-3px); } 50% { transform: translateY(0); } }
+@keyframes breathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.012); } }
+@keyframes sway { 0%, 100% { transform: rotate(calc(var(--sway, 1.5deg) * var(--sway-k, 1) * -1)); } 50% { transform: rotate(calc(var(--sway, 1.5deg) * var(--sway-k, 1))); } }
+@keyframes drift { from { transform: translateX(-12%); } to { transform: translateX(112%); } }
+@keyframes twinkle { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes flicker { 0%, 100% { opacity: 1; } 47% { opacity: 1; } 50% { opacity: 0.55; } 53% { opacity: 1; } }
+@keyframes steam { 0% { transform: translateY(0) scaleX(1); opacity: 0; } 30% { opacity: 0.7; } 100% { transform: translateY(-34px) scaleX(1.6); opacity: 0; } }
+@keyframes ripple { 0% { transform: scale(0.3); opacity: 0.8; } 100% { transform: scale(1.8); opacity: 0; } }
+@keyframes tunnel { from { transform: translateX(0); } to { transform: translateX(-800px); } }
+@keyframes pan-bg { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes fountain { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.12); } }
+@keyframes pulse-ring { 0% { transform: scale(0.9); opacity: 0.6; } 100% { transform: scale(1.8); opacity: 0; } }
+@keyframes float-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes door { 0%, 100% { transform: scaleX(1); } 45%, 55% { transform: scaleX(0.05); } }
+@keyframes train-arrive {
+  0% { transform: translateX(-1900px); }
+  22% { transform: translateX(0); }
+  70% { transform: translateX(0); }
+  100% { transform: translateX(1900px); }
+}
+@keyframes blink-eye { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+/* ── цикл ходьбы (персонажи): бедро, голень (колено сгибается в фазе переноса), плечо, предплечье ── */
+@keyframes w-thigh { 0%, 100% { transform: rotate(-23deg); } 50% { transform: rotate(21deg); } }
+@keyframes w-shin {
+  0% { transform: rotate(3deg); } 15% { transform: rotate(11deg); } 40% { transform: rotate(5deg); }
+  50% { transform: rotate(14deg); } 62% { transform: rotate(50deg); } 75% { transform: rotate(44deg); }
+  90% { transform: rotate(10deg); } 100% { transform: rotate(3deg); }
+}
+@keyframes w-arm { 0%, 100% { transform: rotate(17deg); } 50% { transform: rotate(-19deg); } }
+@keyframes w-fore { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(-34deg); } }
+/* таз опускается в двойной опоре (0/50%) — стопы касаются земли */
+@keyframes walk-bob { 0%, 50%, 100% { transform: translateY(4.6px); } 25%, 75% { transform: translateY(0); } }
+.walk-bob { animation: walk-bob calc(var(--stride, 0.95s) / 1) ease-in-out infinite; }
+@keyframes head-doze { 0%, 100% { transform: rotate(0deg); } 40% { transform: rotate(5deg); } 55% { transform: rotate(-3deg); } }
+@keyframes look-around { 0%, 30%, 100% { transform: rotate(0deg); } 40%, 55% { transform: rotate(-5deg); } 70%, 85% { transform: rotate(3deg); } }
+@keyframes strap-sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+@keyframes car-rock { 0%, 100% { transform: translateY(0); } 23% { transform: translateY(1.4px); } 51% { transform: translateY(-0.6px); } 77% { transform: translateY(1px); } }
+@keyframes tunnel-fast { from { transform: translateX(0); } to { transform: translateX(-1200px); } }
+@keyframes tunnel-slow { from { transform: translateX(0); } to { transform: translateX(-600px); } }
+@keyframes traffic-red { 0%, 45% { opacity: 1; } 46%, 100% { opacity: 0.12; } }
+@keyframes traffic-yellow { 0%, 44% { opacity: 0.12; } 45%, 50% { opacity: 1; } 51%, 94% { opacity: 0.12; } 95%, 100% { opacity: 1; } }
+@keyframes traffic-green { 0%, 50% { opacity: 0.12; } 51%, 94% { opacity: 1; } 95%, 100% { opacity: 0.12; } }
+@keyframes bird-fly { from { transform: translate(-120px, 0); } to { transform: translate(1820px, -60px); } }
+@keyframes wing { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(-0.6); } }
+@keyframes neon-buzz { 0%, 92%, 100% { opacity: 1; } 93% { opacity: 0.6; } 95% { opacity: 1; } 96% { opacity: 0.75; } }
+/* ── вагон метро: цикл «перегон → торможение → станция (двери) → разгон», 64 с, все анимации синхронны ── */
+.car-rock > svg { animation: car-rock 2.3s ease-in-out infinite; }
+.tunnel-run { animation: tunnel-fast 0.9s linear infinite; }
+.tunnel-o { animation: tunnel-o 64s linear infinite; }
+@keyframes tunnel-o { 0%, 66% { opacity: 1; } 72%, 92% { opacity: 0; } 97%, 100% { opacity: 1; } }
+.station-pan { animation: station-pan 64s linear infinite; }
+@keyframes station-pan {
+  0%, 64% { transform: translateX(1900px); animation-timing-function: cubic-bezier(.15,.75,.35,1); }
+  77% { transform: translateX(0); }
+  90% { transform: translateX(0); animation-timing-function: cubic-bezier(.65,0,.9,.35); }
+  100% { transform: translateX(-2100px); }
+}
+.station-light { animation: station-light 64s linear infinite; }
+@keyframes station-light { 0%, 68% { opacity: 0; } 76%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+.door-l { animation: door-l 64s ease-in-out infinite; }
+.door-r { animation: door-r 64s ease-in-out infinite; }
+.door-seal { animation: door-seal 64s linear infinite; }
+@keyframes door-l { 0%, 78.5% { transform: translateX(0); } 80.5%, 87.5% { transform: translateX(-104px); } 89.5%, 100% { transform: translateX(0); } }
+@keyframes door-r { 0%, 78.5% { transform: translateX(0); } 80.5%, 87.5% { transform: translateX(104px); } 89.5%, 100% { transform: translateX(0); } }
+@keyframes door-seal { 0%, 78.6% { opacity: 1; } 78.7%, 89.4% { opacity: 0; } 89.5%, 100% { opacity: 1; } }
+.door-warn { animation: door-warn 64s steps(1) infinite; }
+@keyframes door-warn { 0%, 87% { opacity: 0; } 87.5% { opacity: 1; } 88% { opacity: 0; } 88.5% { opacity: 1; } 89% { opacity: 0; } 89.5% { opacity: 1; } 90%, 100% { opacity: 0; } }
+.disp-next { animation: disp-next 64s steps(1) infinite; }
+.disp-here { animation: disp-here 64s steps(1) infinite; }
+@keyframes disp-next { 0%, 74% { opacity: 1; } 75%, 92% { opacity: 0; } 93%, 100% { opacity: 1; } }
+@keyframes disp-here { 0%, 74% { opacity: 0; } 75%, 92% { opacity: 1; } 93%, 100% { opacity: 0; } }
+.strap { animation: strap-sway 2.3s ease-in-out infinite; }
+.train-arrive { animation: train-arrive 34s cubic-bezier(.3,.6,.3,1) infinite; animation-delay: -4s; }
+.train-door { animation: door 34s ease-in-out infinite; animation-delay: -4s; }
+.low-perf .tunnel-run { animation-duration: 1.8s; }
+.low-perf .strap, .low-perf .car-rock > svg { animation: none; }
+.tl-red { animation: traffic-red 40s linear infinite; }
+.tl-yellow { animation: traffic-yellow 40s linear infinite; }
+.tl-green { animation: traffic-green 40s linear infinite; }
+@keyframes water-shimmer { from { transform: translateX(0); } to { transform: translateX(-512px); } }
+@keyframes zzz { 0% { transform: translate(0, 0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(10px, -26px); opacity: 0; } }
+@keyframes head-nod { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(3deg); } }
+
+.leg-a { animation: walk-leg-a var(--stride, 0.7s) ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 0; }
+.leg-b { animation: walk-leg-b var(--stride, 0.7s) ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 0; }
+.arm-a { animation: walk-arm-a var(--stride, 0.7s) ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 0; }
+.arm-b { animation: walk-arm-b var(--stride, 0.7s) ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 0; }
+.bob { animation: bob calc(var(--stride, 0.7s) / 1) ease-in-out infinite; }
+.breathe { animation: breathe 3.8s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.sway { animation: sway var(--sway-dur, 5s) ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.twinkle { animation: twinkle var(--tw, 3s) ease-in-out infinite; }
+.flicker { animation: flicker 6s linear infinite; }
+
+.low-perf .sway,
+.low-perf .twinkle,
+.low-perf .flicker,
+.low-perf .ambient-anim { animation: none !important; }
+.low-perf .hi-detail { display: none; }
+
+/* ───────── планы сцены (каждый — свой композитный слой) ───────── */
+.scene-plane {
+  position: absolute;
+  inset: -14px -28px;
+  transition: transform 0.45s ease-out;
+  will-change: transform;
+}
+.scene-plane > svg { overflow: hidden; }
+.cloud-deck { opacity: var(--cloud); overflow: hidden; }
+.cloud-pan { position: absolute; left: 0; bottom: 0; height: 100%; aspect-ratio: 32 / 9; min-width: 200%; animation: cloud-pan 420s linear infinite; will-change: transform; }
+@keyframes cloud-pan { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.cloud-body { fill: color-mix(in srgb, var(--sky-mid) 30%, #f3f1f6); }
+.cloud-shade { fill: color-mix(in srgb, var(--sky-top) 60%, #8c8fa6); }
+.cloud-hi { fill: color-mix(in srgb, var(--sky-bot) 45%, #fffaf2); }
+/* передний план покачивается целиком (ветер усиливает) */
+.fore-sway > svg { transform-origin: 50% 100%; animation: fore-sway calc(7s / var(--sway-k, 1)) ease-in-out infinite; }
+@keyframes fore-sway { 0%, 100% { transform: rotate(-0.25deg) translateX(-2px); } 50% { transform: rotate(0.3deg) translateX(3px); } }
+.low-perf .fore-sway > svg, .low-perf .cloud-pan { animation: none; }
+@media (prefers-reduced-motion: reduce) { .fore-sway > svg, .cloud-pan { animation: none; } }
+/* живописная фактура поверх арта: крупные мазки + неравномерность, статична */
+.paint-tex { background-size: 512px 512px, 640px 640px; mix-blend-mode: soft-light; opacity: 0.5; }
+.low-perf .paint-tex { display: none; }
+/* свет в сцене: окна интерьеров, витрины, неон */
+.shop-lit { opacity: calc(0.5 + var(--lamps) * 0.5); }
+.night-only { opacity: var(--night); }
+.day-only { opacity: calc(1 - var(--night)); }
+.overcast-o { opacity: var(--overcast); }
+.neon { animation: neon-buzz 7s linear infinite; }
+.fog-far { opacity: calc(0.18 + var(--fog) * 0.7); }
+.rain-o { opacity: var(--rain); }
+.snow-o { opacity: var(--snow); }
+
+/* ───────── транспорт: город за окном, остановки, двери ───────── */
+.pan-plane { overflow: hidden; transition: none; }
+.pan-track { position: absolute; left: 0; bottom: 0; height: 100%; aspect-ratio: 32 / 9; min-width: 200%; animation: pan-x var(--pan-dur, 20s) linear infinite; will-change: transform; }
+@keyframes pan-x { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+/* остановка (светофор/посадка): город за окном замирает, загораются стоп-сигналы */
+[data-stopped='1'] .pan-track, [data-stopped='1'] .run-anim { animation-play-state: paused; }
+.stop-on { opacity: 0; transition: opacity 0.8s ease; }
+.stop-off { opacity: 1; transition: opacity 0.8s ease; }
+[data-stopped='1'] .stop-on { opacity: 1; }
+[data-stopped='1'] .stop-off { opacity: 0; }
+/* двери автобуса: створки складываются внутрь проёма при data-door='1' */
+.bus-door-l, .bus-door-r { transition: transform 1.1s cubic-bezier(.5,.1,.3,1); transform-box: fill-box; }
+.bus-door-l { transform-origin: 0% 50%; }
+.bus-door-r { transform-origin: 100% 50%; }
+[data-door='1'] .bus-door-l, [data-door='1'] .bus-door-r { transform: scaleX(0.16); }
+.door-open-o { opacity: 0; transition: opacity 0.9s ease; }
+[data-door='1'] .door-open-o { opacity: 1; }
+/* такси: дорога «бежит» навстречу (перспектива — translate+scale), дворники в дождь */
+.road-dash { animation: road-dash 1.1s cubic-bezier(.6,0,1,.7) infinite; transform-box: view-box; }
+@keyframes road-dash { from { transform: translate(var(--dx0), var(--dy0)) scale(0.08); opacity: 0; } 12% { opacity: 1; } to { transform: translate(var(--dx1), var(--dy1)) scale(1.6); opacity: 1; } }
+.road-post { animation: road-post 2.6s cubic-bezier(.55,0,1,.6) infinite; transform-box: view-box; }
+@keyframes road-post { from { transform: translate(var(--dx0), var(--dy0)) scale(0.06); opacity: 0; } 10% { opacity: 1; } to { transform: translate(var(--dx1), var(--dy1)) scale(1.4); opacity: 1; } }
+.light-sweep { animation: light-sweep 2.6s cubic-bezier(.55,0,1,.6) infinite; }
+@keyframes light-sweep { 0%, 55% { transform: translateX(-900px); opacity: 0; } 70% { opacity: 1; } 100% { transform: translateX(900px); opacity: 0; } }
+.wiper { animation: wiper 1.6s ease-in-out infinite; transform-box: view-box; }
+@keyframes wiper { 0%, 100% { transform: rotate(0deg); } 45%, 55% { transform: rotate(-78deg); } }
+.low-perf .road-dash { animation-duration: 2.2s; }
+.low-perf .road-post { animation-duration: 5.2s; }
+.low-perf .light-sweep, .low-perf .wiper { animation: none; }
+/* метро: прибытие поезда на станцию по фазе события (длительность = длительность фазы) */
+.train-in { animation: train-in var(--dur, 8s) cubic-bezier(.15,.7,.3,1) both; }
+@keyframes train-in { from { transform: translateX(2400px); } to { transform: translateX(0); } }
+.train-out { animation: train-out var(--dur, 8s) cubic-bezier(.6,0,.9,.5) both; }
+@keyframes train-out { 0%, 30% { transform: translateX(0); } to { transform: translateX(-2600px); } }
+/* .train-door — освещённый проём: scaleX(1) — двери открыты, 0.05 — сомкнуты */
+.doors-open .train-door { animation: none; transform: scaleX(1); transition: transform 1.2s ease; }
+.doors-shut .train-door { animation: none; transform: scaleX(0.05); }
+.veh-pull-in { animation: veh-pull-in 4.5s cubic-bezier(.15,.75,.3,1) both; }
+@keyframes veh-pull-in { from { transform: translateX(-1300px); } to { transform: translateX(0); } }
+/* посадка/выход из вагона: в конце шага герой уходит в глубину проёма / появляется из него */
+.board-in { animation: board-in var(--dur, 4s) ease-in both; }
+@keyframes board-in { 0%, 60% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-34px); opacity: 0; } }
+.board-out { animation: board-out var(--dur, 4s) ease-out both; }
+@keyframes board-out { 0% { transform: translateY(-34px); opacity: 0; } 30%, 100% { transform: translateY(0); opacity: 1; } }
+/* цикл вагона метро стартует с фазы события (см. MetroRideScene) */
+.tunnel-o, .station-pan, .station-light, .door-l, .door-r, .door-seal, .door-warn, .disp-next, .disp-here { animation-delay: var(--cyc-delay, 0s); }
+@keyframes pan-in-x { from { transform: translateX(var(--from, 60px)); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
+.cam-settle { animation: pan-in-x 1.6s cubic-bezier(.2,.7,.2,1) both; }
+@media (prefers-reduced-motion: reduce) { .road-dash, .road-post, .light-sweep, .wiper, .cam-settle { animation: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sway, .twinkle, .flicker { animation: none; }
+}
+
+/* ───────── UI ───────── */
+.glass {
+  background: linear-gradient(180deg, rgba(34, 24, 62, 0.62), rgba(22, 16, 44, 0.72));
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid rgba(255, 220, 190, 0.14);
+  box-shadow: 0 10px 40px rgba(8, 4, 24, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+input[type='range'].vol {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffb27a var(--v, 50%), rgba(255, 255, 255, 0.18) var(--v, 50%));
+  outline: none;
+  cursor: pointer;
+}
+input[type='range'].vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff3e2;
+  box-shadow: 0 0 0 4px rgba(255, 178, 122, 0.25);
+}
+input[type='range'].vol::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff3e2;
+}
+
+.scrollbar-thin::-webkit-scrollbar { width: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 6px; }
+
+@keyframes tunnel-spin { to { transform: rotate(360deg); } }
+@keyframes cloud-drift { from { transform: translateX(-320px); } to { transform: translateX(1920px); } }
+@keyframes swing { 0%, 100% { transform: rotate(-16deg); } 50% { transform: rotate(16deg); } }
+@keyframes duck-swim { from { transform: translateX(-60px); } to { transform: translateX(130px); } }
+@keyframes lightning { 0% { opacity: 0; } 6% { opacity: var(--flash, 0.85); } 12% { opacity: 0.1; } 18% { opacity: calc(var(--flash, 0.85) * 0.8); } 40% { opacity: 0.12; } 100% { opacity: 0; } }
+/* ───────── погода: вспышка молнии и туман слоями (только transform/opacity) ───────── */
+.lightning-flash { background: radial-gradient(ellipse at 50% 15%, #f4f7ff 0%, #dfe7ff 45%, #b9c6ee 100%); mix-blend-mode: screen; }
+.fog-wrap { opacity: min(1, calc(var(--fog) * 1.15)); transition: opacity 1.5s linear; }
+.fog-haze { background: linear-gradient(180deg, rgba(222,228,240,0) 0%, rgba(222,228,240,.45) 38%, rgba(226,231,242,.6) 62%, rgba(226,231,242,.35) 100%); }
+.fog-band { position: absolute; left: -50%; width: 200%; will-change: transform; }
+.fog-mid { top: 40%; height: 34%; opacity: .75; background: radial-gradient(ellipse 22% 60% at 20% 50%, rgba(238,241,250,.75), transparent 70%), radial-gradient(ellipse 26% 55% at 55% 45%, rgba(238,241,250,.65), transparent 70%), radial-gradient(ellipse 20% 60% at 85% 55%, rgba(238,241,250,.7), transparent 70%); animation: fog-drift 70s ease-in-out infinite alternate; }
+.fog-low { top: 66%; height: 30%; opacity: .85; background: radial-gradient(ellipse 30% 50% at 30% 60%, rgba(240,242,250,.85), transparent 72%), radial-gradient(ellipse 28% 45% at 75% 55%, rgba(240,242,250,.8), transparent 72%); animation: fog-drift 46s ease-in-out infinite alternate-reverse; }
+@keyframes fog-drift { from { transform: translateX(-6%); } to { transform: translateX(6%); } }
+.low-perf .fog-band { animation: none; }
+@media (prefers-reduced-motion: reduce) { .fog-band { animation: none; } }
