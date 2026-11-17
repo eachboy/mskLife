@@ -21,7 +21,7 @@
 3. **Audio Engineer** (параллельно, если контракт готов): звук дождя по `weather.rain`, кроссфейды, замер `audio-meter`.
 4. **Graphics Engineer** (параллельно): частицы, лужи, `--wet`, капли на стекле в интерьерах.
 5. **Frontend**: интеграция в UI (подписи, настройки), доступность.
-6. **QA**: `npm run verify`, e2e, `e2e:visual` (эталоны обновить осознанно), `npm run qa`.
+6. **QA**: `npm run verify`, e2e, `e2e:visual` (UI поверх 3D; эталоны обновлять осознанно), `npm run qa`.
 7. **Visual Art Director**: скриншоты матрицы → вердикт.
 8. **User Simulator**: «хочется ли смотреть на дождь 20 минут» → вердикт.
 9. **Architect**: сводит замечания P0/P1/P2, возвращает исполнителям.
@@ -34,7 +34,7 @@
 1. Данные в `src/data/locations.ts` (id, kind/тип сцены, outdoor, расстояния/координаты, ambience, theme, плотность).
 2. Если тип сцены новый — компонент в `src/scenes` по Style Guide (skill moscow-visual-art-direction), свет через CSS-переменные.
 3. Достижимость и переходы — тест в `src/simulation/__tests__` (skill moscow-city-simulation).
-4. Добавить в матрицу `e2e/visual.spec.ts` и `scripts/shots.mjs`, создать эталон.
+4. Добавить локацию в `scripts/shots3d.mjs`; кадр 3D смотрит visual-art-director.
 5. Ambience-звук локации — audio-engineer.
 
 ## Новый персонаж / прохожий

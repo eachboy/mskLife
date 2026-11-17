@@ -22,6 +22,22 @@ const curve = (v: number): number => Math.pow(clamp01(v), 1.6)
 /** порог мягкого ограничителя: до него сигнал проходит линейно */
 export const SOFT_CLIP_KNEE = 0.7
 
+/** «Вид сверху» (карта открыта): срез верха и подрезка громкости только на шинах города и погоды. */
+export const MAP_OVERVIEW_LP_HZ = 650
+export const MAP_OPEN_LP_HZ = 18000
+export const MAP_OVERVIEW_TRIM_DB = -4
+/** постоянная времени setTargetAtTime, с (≈95% пути за 3·τ ≈ 1 с) */
+export const MAP_OVERVIEW_TAU = 0.35
+
+const dbToLinear = (db: number): number => Math.pow(10, db / 20)
+
+/** Цели «вид сверху»: фильтр и подрезка шин города/погоды. Музыка сюда не входит — остаётся чистой. */
+export function mapOverviewTargets(isMapOpen: boolean): { cutoffHz: number; trim: number } {
+  return isMapOpen
+    ? { cutoffHz: MAP_OVERVIEW_LP_HZ, trim: dbToLinear(MAP_OVERVIEW_TRIM_DB) }
+    : { cutoffHz: MAP_OPEN_LP_HZ, trim: 1 }
+}
+
 /**
  * Микшер MOSCOW LIFE.
  *
@@ -39,6 +55,11 @@ export class AudioMixer {
   readonly weatherIn: ToneNS.Gain
   readonly context: ToneNS.BaseContext
   private sum: ToneNS.Gain
+  /** «вид сверху»: lowpass + подрезка на шинах города и погоды (музыка в обход) */
+  private cityLp: ToneNS.Filter
+  private weatherLp: ToneNS.Filter
+  private cityTrim: ToneNS.Gain
+  private weatherTrim: ToneNS.Gain
   private warmth: ToneNS.Filter
   private comp: ToneNS.Compressor
   private limiter: ToneNS.WaveShaper
@@ -55,13 +76,24 @@ export class AudioMixer {
       // 'playback' — крупный буфер вывода: меньше риск недогрузки при нагрузке на главный поток.
       // lookAhead 0.3 с: события Transport планируются заранее, джиттер UI не влияет на ритм.
       this.context = new T.Context({ latencyHint: 'playback', lookAhead: 0.3, updateInterval: 0.05 })
-      T.setContext(this.context)
+      // B-11: disposeOld=true закрывает контекст Tone «по умолчанию», если он успел создаться
+      // (сигнатура tone 15.1.22: setContext(context, disposeOld = false)); сбой его закрытия не должен ломать старт
+      try {
+        T.setContext(this.context, true)
+      } catch {
+        T.setContext(this.context)
+      }
     }
     const c = { context: this.context }
     this.musicIn = new T.Gain({ ...c, gain: 0 })
     this.cityIn = new T.Gain({ ...c, gain: 0 })
     this.weatherIn = new T.Gain({ ...c, gain: 0 })
     this.sum = new T.Gain({ ...c, gain: 0.9 })
+    const lp = () => new T.Filter({ ...c, type: 'lowpass', frequency: MAP_OPEN_LP_HZ, Q: 0.5, rolloff: -12 })
+    this.cityLp = lp()
+    this.weatherLp = lp()
+    this.cityTrim = new T.Gain({ ...c, gain: 1 })
+    this.weatherTrim = new T.Gain({ ...c, gain: 1 })
     this.comp = new T.Compressor({ ...c, threshold: -16, ratio: 2, attack: 0.025, release: 0.4, knee: 10 })
     this.warmth = new T.Filter({ ...c, type: 'lowpass', frequency: MASTER_LP_HZ, Q: 0.5, rolloff: -12 })
     // Без DynamicsCompressor-лимитера (в Chrome авто-makeup «качает» усиление).
@@ -90,8 +122,8 @@ export class AudioMixer {
     this.analysers = { music: mk(2048), city: mk(1024), weather: mk(1024), preLimiter: mk(2048), master: mk(2048) }
 
     this.musicIn.connect(this.sum)
-    this.cityIn.connect(this.sum)
-    this.weatherIn.connect(this.sum)
+    this.cityIn.chain(this.cityLp, this.cityTrim, this.sum)
+    this.weatherIn.chain(this.weatherLp, this.weatherTrim, this.sum)
     this.musicIn.connect(this.analysers.music)
     this.cityIn.connect(this.analysers.city)
     this.weatherIn.connect(this.analysers.weather)
@@ -116,6 +148,20 @@ export class AudioMixer {
     this.masterGain.gain.rampTo(curve(l.master ?? 1), RAMP)
   }
 
+  /**
+   * «Вид с высоты птичьего полёта»: пока открыта полноэкранная карта, шины города и погоды плавно
+   * уходят в lowpass 650 Гц и на −4 дБ; при возврате в локацию фильтр открывается до 18 кГц.
+   * Только setTargetAtTime от currentTime (без cancel — иначе скачок значения = щелчок);
+   * музыкальная шина не затрагивается.
+   */
+  setMapOverviewMode(isMapOpen: boolean): void {
+    if (this.disposed) return
+    const { cutoffHz, trim } = mapOverviewTargets(isMapOpen)
+    const t = this.context.currentTime
+    for (const f of [this.cityLp, this.weatherLp]) safe(() => f.frequency.setTargetAtTime(cutoffHz, t, MAP_OVERVIEW_TAU))
+    for (const g of [this.cityTrim, this.weatherTrim]) safe(() => g.gain.setTargetAtTime(trim, t, MAP_OVERVIEW_TAU))
+  }
+
   /** Возобновить контекст (после блокировки/прерывания). Скрытие страницы сюда не ведёт. */
   async resume(): Promise<void> {
     const raw = this.context.rawContext as AudioContext
@@ -134,7 +180,7 @@ export class AudioMixer {
 
   /** только для диагностики */
   debugNodes() {
-    return { sum: this.sum, comp: this.comp, warmth: this.warmth, limiter: this.limiter, master: this.masterGain, musicIn: this.musicIn, cityIn: this.cityIn, weatherIn: this.weatherIn }
+    return { cityLp: this.cityLp, weatherLp: this.weatherLp, cityTrim: this.cityTrim, weatherTrim: this.weatherTrim, sum: this.sum, comp: this.comp, warmth: this.warmth, limiter: this.limiter, master: this.masterGain, musicIn: this.musicIn, cityIn: this.cityIn, weatherIn: this.weatherIn }
   }
 
   get state(): string {
@@ -146,7 +192,7 @@ export class AudioMixer {
     this.disposed = true
     safe(() => this.context.transport.stop().cancel(0))
     for (const a of Object.values(this.analysers)) safe(() => a.disconnect())
-    disposeAll([this.musicIn, this.cityIn, this.weatherIn, this.sum, this.comp, this.warmth, this.limiter, this.masterGain])
+    disposeAll([this.musicIn, this.cityIn, this.weatherIn, this.cityLp, this.weatherLp, this.cityTrim, this.weatherTrim, this.sum, this.comp, this.warmth, this.limiter, this.masterGain])
     if (this.ownsContext) safe(() => void this.context.dispose())
   }
 }

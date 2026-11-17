@@ -1,0 +1,380 @@
+/* ───────── 2.5D-карта Москвы ─────────
+   Камера — CSS-переменные на плоскости (зарегистрированы, поэтому анимируются transition-ом).
+   Пины и маячок героя — «билборды»: контр-ротация yaw и наклона ставит их вертикально лицом к камере. */
+@property --map-zoom {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+@property --map-fit {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+@property --map-yaw {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: -12deg;
+}
+@property --map-pan-x {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@property --map-pan-y {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@property --map-night {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+.map25-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  outline: none;
+}
+.map25-viewport[data-drag="1"] {
+  cursor: grabbing;
+}
+.map25-viewport:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(255, 178, 122, 0.7);
+}
+
+.map25-plane {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1000px;
+  height: 1000px;
+  margin: -500px 0 0 -500px;
+  transform-style: preserve-3d;
+  transform: perspective(calc(1200px * var(--map-zoom) * var(--map-fit))) rotateX(52deg) rotateZ(var(--map-yaw))
+    scale(calc(var(--map-zoom) * var(--map-fit))) translate3d(var(--map-pan-x), var(--map-pan-y), 0px);
+  transition:
+    --map-zoom 0.45s cubic-bezier(0.2, 0.7, 0.2, 1),
+    --map-yaw 0.45s cubic-bezier(0.2, 0.7, 0.2, 1),
+    --map-pan-x 0.5s cubic-bezier(0.2, 0.7, 0.2, 1),
+    --map-pan-y 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.map25-plane[data-drag="1"] {
+  transition: none;
+}
+/* «Camera Dive»: медленный кинематографичный наезд в точку узла */
+.map25-plane[data-dive="1"] {
+  transition:
+    --map-zoom 1.15s cubic-bezier(0.55, 0, 0.15, 1),
+    --map-yaw 1.15s cubic-bezier(0.55, 0, 0.15, 1),
+    --map-pan-x 1.15s cubic-bezier(0.55, 0, 0.15, 1),
+    --map-pan-y 1.15s cubic-bezier(0.55, 0, 0.15, 1);
+}
+/* радар следует за героем: линейно, в такт обновлению позиции */
+.map25-radar .map25-plane {
+  transition:
+    --map-pan-x 0.4s linear,
+    --map-pan-y 0.4s linear;
+}
+
+/* толщина плиты: три слоя под плоскостью */
+.map25-slab {
+  position: absolute;
+  inset: 0;
+  border-radius: 64px;
+  background: var(--map-slab, #4a3f66);
+  pointer-events: none;
+}
+.map25-slab.s1 {
+  transform: translateZ(-5px);
+  filter: brightness(0.82);
+}
+.map25-slab.s2 {
+  transform: translateZ(-10px);
+  filter: brightness(0.66);
+}
+.map25-slab.s3 {
+  transform: translateZ(-16px);
+  filter: brightness(0.5);
+  box-shadow: 0 60px 90px rgba(6, 3, 18, 0.55);
+}
+
+.map25-svg {
+  position: absolute;
+  inset: 0;
+  width: 1000px;
+  height: 1000px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* ─ вода ─ */
+.river-flow {
+  stroke-dasharray: 3 26;
+  animation: river-flow 5s linear infinite;
+}
+@keyframes river-flow {
+  to {
+    stroke-dashoffset: -58;
+  }
+}
+
+/* ─ окна и неон ночью ─ */
+.map-win {
+  fill: #ffe2a8;
+  opacity: calc(0.14 + var(--map-night) * 0.86);
+}
+.map-neon {
+  opacity: calc(var(--map-night) * 0.95);
+}
+.map-lamp {
+  opacity: calc(var(--map-night) * 0.9);
+}
+
+/* ─ подписи станций появляются при приближении ─ */
+.st-label {
+  font:
+    600 7px / 1 "Inter",
+    system-ui,
+    sans-serif;
+  fill: var(--map-ink, #3a2f4f);
+  paint-order: stroke;
+  stroke: var(--map-ground, #d8c8a6);
+  stroke-width: 2.4px;
+  opacity: clamp(0, calc((var(--map-zoom) - 1.3) * 2.2), 1);
+}
+.map-ring-label {
+  font:
+    700 9px / 1 "Inter",
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  fill: var(--map-ink, #3a2f4f);
+  opacity: 0.55;
+}
+
+/* ─ маршрут: бегущий пунктир + свечение ─ */
+.route-run {
+  stroke-dasharray: 14 10;
+  animation: route-march 0.9s linear infinite;
+  filter: drop-shadow(0 0 5px var(--c, #fff));
+}
+.route-under {
+  opacity: 0.35;
+  filter: blur(2px);
+}
+.route-planned .route-run {
+  stroke-dasharray: 4 12;
+  opacity: 0.8;
+}
+@keyframes route-march {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+.line-active {
+  filter: drop-shadow(0 0 6px var(--c, #fff));
+}
+
+/* ─ площадка под пином: выбранная / цель ─ */
+.pin-plate {
+  fill: rgba(30, 20, 50, 0.28);
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1.4;
+}
+.pin-plate[data-selected="1"] {
+  stroke: #ffb27a;
+  stroke-width: 2.4;
+  fill: rgba(255, 178, 122, 0.25);
+}
+.pin-plate[data-target="1"] {
+  stroke: #7ee0ff;
+  stroke-width: 2.4;
+  fill: rgba(126, 224, 255, 0.2);
+  animation: target-pulse 1.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes target-pulse {
+  50% {
+    transform: scale(1.25);
+    opacity: 0.6;
+  }
+}
+
+/* ─ билборды ─ */
+.map25-bb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max-content;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transform-origin: 0 0;
+  transform: translate3d(var(--px, 0px), var(--py, 0px), var(--pz, 18px)) rotateZ(calc(var(--map-yaw) * -1))
+    rotateX(-52deg) scale(calc(var(--pin-boost, 1) * 0.85 / var(--map-fit) / (0.45 + 0.55 * var(--map-zoom))))
+    translate(-50%, -100%);
+  transition: filter 0.2s;
+}
+.map25-bb:hover,
+.map25-bb:focus-visible {
+  filter: drop-shadow(0 0 10px rgba(255, 210, 160, 0.9)) brightness(1.08);
+  outline: none;
+  z-index: 3;
+}
+.map25-bb[data-selected="1"] {
+  filter: drop-shadow(0 0 12px rgba(255, 178, 122, 0.95));
+  z-index: 4;
+}
+.pin-label {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font:
+    700 11px / 1 "Inter",
+    system-ui,
+    sans-serif;
+  color: #fff3e2;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(27, 21, 48, 0.72);
+  border: 1px solid rgba(255, 220, 190, 0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.map25-radar .pin-label {
+  display: none;
+}
+.map25-radar .map25-bb {
+  pointer-events: none;
+}
+
+/* ─ маячок героя ─ */
+.map25-hero {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  transition: transform 0.4s linear;
+  pointer-events: none;
+}
+.hero-ring {
+  position: absolute;
+  left: -20px;
+  top: -20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 120, 120, 0.9);
+  background: rgba(255, 120, 120, 0.22);
+  animation: hero-pulse 2s ease-out infinite;
+}
+.hero-ring.r2 {
+  animation-delay: 1s;
+}
+@keyframes hero-pulse {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+.hero-core {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: #2a1a3a;
+  background: radial-gradient(circle at 35% 30%, #ffe3c2, #ff9a7a 70%);
+  border: 2px solid #fff3e2;
+  box-shadow:
+    0 0 0 4px rgba(255, 120, 120, 0.3),
+    0 6px 14px rgba(20, 8, 40, 0.5);
+  pointer-events: auto;
+}
+.hero-bb {
+  pointer-events: auto;
+  padding-bottom: 6px;
+}
+.hero-bb::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 2px;
+  height: 8px;
+  margin-left: -1px;
+  background: #fff3e2;
+  opacity: 0.8;
+}
+.hero-core[data-moving="1"] {
+  animation: hero-bob 0.7s ease-in-out infinite;
+}
+@keyframes hero-bob {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* ─ вход/выход карты и проявление сцены после наезда ─ */
+.scene-arrive {
+  animation: scene-arrive 0.95s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes scene-arrive {
+  from {
+    transform: scale(1.09);
+    opacity: 0.35;
+    filter: blur(5px);
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-run,
+  .river-flow,
+  .hero-ring,
+  .hero-core,
+  .pin-plate,
+  .scene-arrive {
+    animation: none;
+  }
+  .map25-plane,
+  .map25-plane[data-dive="1"],
+  .map25-radar .map25-plane {
+    transition: none;
+  }
+}
+.low-perf-map .river-flow,
+.low-perf-map .hero-ring.r2 {
+  animation: none;
+}
+
+/* радар: пины и маячок компактнее */
+.map25-radar {
+  --pin-boost: 0.55;
+}
+
+/* маячок героя парит выше пинов — всегда кликабелен и не перекрывается соседними диорамами */
+.hero-bb {
+  --pz: 52px;
+}

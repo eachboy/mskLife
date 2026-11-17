@@ -1,12 +1,15 @@
 import {
-  Building2, Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudMoon, CloudSun, Compass, Maximize2, Minimize2, Moon, Pause, Play, Settings, Snowflake, Sun,
+  Building2, Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudMoon, CloudSun, Compass, Map as MapIcon, Maximize2, Minimize2, Moon, Pause, Play, Settings, Snowflake, Sun,
   Volume2, VolumeX, Wind, Workflow, type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { WEATHER_PRESETS } from '../../features/weather/weatherData'
 import { getLighting, lightingMonth } from '../../features/city/lighting'
 import { useAudioStore } from '../../stores/audioStore'
+import { useMapStore } from '../../stores/mapStore'
 import { useWorldStore } from '../../stores/worldStore'
+import { useWorldMinutes } from '../../utils/useWorldMinutes'
 import { fmtTime } from '../../utils/math'
 import { IconButton } from '../ui/IconButton'
 import { Slider } from '../ui/Slider'
@@ -25,18 +28,23 @@ export function BottomBar({ panel, setPanel, onToggleFullscreen, fullscreen }: {
   onToggleFullscreen: () => void
   fullscreen: boolean
 }) {
-  const a = useAudioStore()
-  const minutes = useWorldStore((s) => Math.floor(s.minutes))
+  const musicPlaying = useAudioStore((s) => s.musicPlaying)
+  const engineState = useAudioStore((s) => s.engineState)
+  const setMusicPlaying = useAudioStore((s) => s.setMusicPlaying)
+  const track = useAudioStore((s) => s.track)
+  const minutes = useWorldMinutes()
   const weatherKind = useWorldStore((s) => s.weatherKind)
   const temperature = useWorldStore((s) => s.temperature)
   const dayCount = useWorldStore((s) => s.dayCount)
   const [mix, setMix] = useState(false)
+  const mapOpen = useMapStore((s) => s.open)
+  const toggleMap = useMapStore((s) => s.toggleMap)
   const preset = WEATHER_PRESETS[weatherKind]
   const season = useWorldStore((s) => s.season)
   // ночью вместо солнца — луна (по длине дня сезона)
   const isNight = getLighting(minutes, preset.params, season, lightingMonth(season)).night > 0.6
   const WIcon = isNight && preset.icon === 'sun' ? Moon : isNight && preset.icon === 'cloud-sun' ? CloudMoon : ICONS[preset.icon] ?? Cloud
-  const playing = a.musicPlaying && a.engineState === 'running'
+  const playing = musicPlaying && engineState === 'running'
 
   const [date, setDate] = useState('')
   useEffect(() => {
@@ -49,40 +57,36 @@ export function BottomBar({ panel, setPanel, onToggleFullscreen, fullscreen }: {
   const toggle = (p: Exclude<PanelId, null>) => setPanel(panel === p ? null : p)
 
   return (
-    <div className="absolute inset-x-0 bottom-0 z-30 flex justify-center px-2 pb-2 md:px-4 md:pb-4" data-testid="bottom-bar">
+    <div className="zen-ui absolute inset-x-0 bottom-0 z-30 flex justify-center px-2 pb-2 md:px-4 md:pb-4" data-testid="bottom-bar">
       <div className="glass w-full max-w-[1280px] rounded-[26px] px-3 py-2 md:px-4">
         {/* мобильный микшер */}
         {mix && (
           <div className="mb-2 grid grid-cols-1 gap-2 border-b border-white/10 pb-3 xl:hidden">
-            <MixRow icon={<Volume2 size={16} />} label="Музыка" value={a.musicVolume} onChange={a.setMusicVolume} />
-            <MixRow icon={<Building2 size={16} />} label="Город" value={a.cityVolume} onChange={a.setCityVolume} muted={a.cityMuted} onMute={a.toggleCityMuted} />
-            <MixRow icon={<CloudRain size={16} />} label="Погода" value={a.weatherVolume} onChange={a.setWeatherVolume} muted={a.weatherMuted} onMute={a.toggleWeatherMuted} />
+            <MixRows />
           </div>
         )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 md:flex-nowrap md:gap-x-5">
           {/* музыка */}
           <div className="flex min-w-0 flex-1 items-center gap-3 xl:flex-none xl:basis-[330px]">
-            <IconButton size="lg" label={playing ? 'Пауза' : 'Играть'} onClick={() => a.setMusicPlaying(!a.musicPlaying)} className="bg-[#ffb27a] !text-[#2a1a3a] hover:!bg-[#ffc79c]" data-testid="play-toggle">
+            <IconButton size="lg" label={playing ? 'Пауза' : 'Играть'} onClick={() => setMusicPlaying(!musicPlaying)} className="bg-[#ffb27a] !text-[#2a1a3a] hover:!bg-[#ffc79c]" data-testid="play-toggle">
               {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
             </IconButton>
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2">
                 <Visualizer />
-                <div className="h-[18px] min-w-0 flex-1 truncate whitespace-nowrap text-[13px] font-semibold leading-[18px]" data-testid="track-title" title={a.track?.title}>
-                  {a.engineState === 'error' ? 'Звук недоступен' : a.track?.title ?? 'Настраиваем виниловый проигрыватель…'}
+                <div className="h-[18px] min-w-0 flex-1 truncate whitespace-nowrap text-[13px] font-semibold leading-[18px]" data-testid="track-title" title={track?.title}>
+                  {engineState === 'error' ? 'Звук недоступен' : track?.title ??'Настраиваем виниловый проигрыватель…'}
                 </div>
               </div>
               <div className="mt-0.5 h-[15px] truncate whitespace-nowrap text-[11px] leading-[15px] text-[#fff3e2]/55">
-                {a.track ? `${a.track.mood} · ${a.track.key}` : 'генеративный lofi'}
+                {track ? `${track.mood} · ${track.key}` :'генеративный lofi'}
               </div>
             </div>
           </div>
 
           {/* микшер (десктоп) */}
           <div className="hidden items-center gap-5 xl:flex xl:flex-1">
-            <MixRow compact icon={<Volume2 size={16} />} label="Музыка" value={a.musicVolume} onChange={a.setMusicVolume} />
-            <MixRow compact icon={<Building2 size={16} />} label="Город" value={a.cityVolume} onChange={a.setCityVolume} muted={a.cityMuted} onMute={a.toggleCityMuted} />
-            <MixRow compact icon={<CloudRain size={16} />} label="Погода" value={a.weatherVolume} onChange={a.setWeatherVolume} muted={a.weatherMuted} onMute={a.toggleWeatherMuted} />
+            <MixRows compact />
           </div>
 
           {/* информация */}
@@ -104,6 +108,7 @@ export function BottomBar({ panel, setPanel, onToggleFullscreen, fullscreen }: {
           <div className="flex items-center gap-0.5">
             <IconButton className="xl:!hidden" label="Микшер" active={mix} onClick={() => setMix((v) => !v)}><Volume2 size={18} /></IconButton>
             <IconButton label="Сценарий дня" active={panel === 'scenario'} onClick={() => toggle('scenario')} data-testid="btn-scenario"><Workflow size={18} /></IconButton>
+            <IconButton label={mapOpen ? 'Вернуться в сцену (M)' : 'Карта города (M)'} active={mapOpen} onClick={toggleMap} data-testid="btn-map"><MapIcon size={18} /></IconButton>
             <IconButton label="Сменить локацию" active={panel === 'location'} onClick={() => toggle('location')} data-testid="btn-location"><Compass size={18} /></IconButton>
             <IconButton label="Настройки" active={panel === 'settings'} onClick={() => toggle('settings')} data-testid="btn-settings"><Settings size={18} /></IconButton>
             <IconButton label={fullscreen ? 'Выйти из полноэкранного режима' : 'Полный экран'} onClick={onToggleFullscreen} data-testid="btn-fullscreen">
@@ -116,7 +121,28 @@ export function BottomBar({ panel, setPanel, onToggleFullscreen, fullscreen }: {
   )
 }
 
-function MixRow({ icon, label, value, onChange, muted, onMute, compact }: {
+/** Три строки микшера; подписка на громкости/mute отдельно от остального BottomBar (beat не затрагивает). */
+function MixRows({ compact }: { compact?: boolean }) {
+  const v = useAudioStore(useShallow((s) => ({
+    musicVolume: s.musicVolume, cityVolume: s.cityVolume, weatherVolume: s.weatherVolume,
+    cityMuted: s.cityMuted, weatherMuted: s.weatherMuted,
+    setMusicVolume: s.setMusicVolume, setCityVolume: s.setCityVolume, setWeatherVolume: s.setWeatherVolume,
+    toggleCityMuted: s.toggleCityMuted, toggleWeatherMuted: s.toggleWeatherMuted,
+  })))
+  return (
+    <>
+      <MixRow compact={compact} icon={ICON_MUSIC} label="Музыка" value={v.musicVolume} onChange={v.setMusicVolume} />
+      <MixRow compact={compact} icon={ICON_CITY} label="Город" value={v.cityVolume} onChange={v.setCityVolume} muted={v.cityMuted} onMute={v.toggleCityMuted} />
+      <MixRow compact={compact} icon={ICON_WEATHER} label="Погода" value={v.weatherVolume} onChange={v.setWeatherVolume} muted={v.weatherMuted} onMute={v.toggleWeatherMuted} />
+    </>
+  )
+}
+
+const ICON_MUSIC = <Volume2 size={16} />
+const ICON_CITY = <Building2 size={16} />
+const ICON_WEATHER = <CloudRain size={16} />
+
+const MixRow = memo(function MixRow({ icon, label, value, onChange, muted, onMute, compact }: {
   icon: React.ReactNode
   label: string
   value: number
@@ -143,4 +169,4 @@ function MixRow({ icon, label, value, onChange, muted, onMute, compact }: {
       </div>
     </div>
   )
-}
+})

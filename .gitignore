@@ -29,3 +29,14 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# инструменты и временные файлы
+.playwright-mcp/
+scripts/_*.tmp.mjs
+*.tmp.mjs
+*.log
+.claude/scheduled_tasks.lock
+
+# черновики генерации референсов (в репозитории только утверждённые v2)
+assets/source/lookdev/drafts/
+assets/source/lookdev/v2/old/

@@ -5,11 +5,15 @@ import { BottomBar, type PanelId } from '../components/controls/BottomBar'
 import { PanelHost } from '../components/controls/Panels'
 import { CaptionToast, Curtain, TitleCard, TopBar } from '../components/layout/Overlays'
 import { StartScreen } from '../components/StartScreen'
+import { CityMapHub } from '../features/city/CityMapHub'
+import { MiniRadar } from '../features/city/MiniRadar'
 import { weatherManager } from '../features/weather/WeatherManager'
 import { SceneStage } from '../scenes/SceneStage'
 import { scenarioEngine } from '../simulation/engine/ScenarioEngine'
 import { useAudioStore } from '../stores/audioStore'
+import { useMapStore } from '../stores/mapStore'
 import { useWorldStore } from '../stores/worldStore'
+import { useZenMode } from './useZenMode'
 
 // Диагностика звука — отдельный чанк, грузится только по ?audiodiag
 const AUDIO_DIAG = typeof location !== 'undefined' && new URLSearchParams(location.search).has('audiodiag')
@@ -17,10 +21,14 @@ const AudioDiagnosticsPanel = lazy(() => import('../components/player/AudioDiagn
 
 export default function App() {
   const started = useWorldStore((s) => s.started)
+  const mapOpen = useMapStore((s) => s.open)
   const audio = useAudioEngine()
   const [busy, setBusy] = useState(false)
   const [panel, setPanel] = useState<PanelId>(null)
   const [fullscreen, setFullscreen] = useState(false)
+
+  // Zen Mode: чистая сцена после 12 с покоя (не при открытой панели или карте)
+  useZenMode(started && panel === null && !mapOpen)
 
   // стартовая сцена под экраном приветствия + авто-экономия для слабых устройств
   useEffect(() => {
@@ -69,7 +77,16 @@ export default function App() {
         const a = useAudioStore.getState()
         a.setMusicPlaying(!a.musicPlaying)
       } else if (e.key === 'f' || e.key === 'F') toggleFullscreen()
-      else if (e.key === 'Escape') setPanel(null)
+      else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (!useMapStore.getState().diving) useMapStore.getState().toggleMap()
+      } else if (e.key === 'Escape') {
+        const m = useMapStore.getState()
+        if (m.open) {
+          // сначала закрываем карточку, затем саму карту
+          if (m.selected) m.select(null)
+          else if (!m.diving) m.closeMap()
+        } else setPanel(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -81,6 +98,8 @@ export default function App() {
       <Curtain />
       {started && (
         <>
+          <AnimatePresence>{mapOpen && <CityMapHub key="city-map" />}</AnimatePresence>
+          {!mapOpen && <MiniRadar />}
           <TopBar />
           <TitleCard />
           <CaptionToast />

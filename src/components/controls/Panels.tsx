@@ -105,7 +105,11 @@ function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: bool
 }
 
 function SettingsPanel({ close }: { close: () => void }) {
-  const s = useWorldStore()
+  const weatherSource = useWorldStore((s) => s.weatherSource)
+  const clockMode = useWorldStore((s) => s.clockMode)
+  const lowPerf = useWorldStore((s) => s.lowPerf)
+  const weatherKind = useWorldStore((s) => s.weatherKind)
+  const patch = useWorldStore((s) => s.patch)
   const master = useAudioStore((a) => a.masterVolume)
   const setMaster = useAudioStore((a) => a.setMasterVolume)
   const viz = useAudioStore((a) => a.vizMode)
@@ -115,9 +119,9 @@ function SettingsPanel({ close }: { close: () => void }) {
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <div className="mb-1 text-[11px] uppercase tracking-widest text-[#fff3e2]/45">Мир</div>
-          <Toggle on={s.weatherSource === 'real'} onChange={(v) => weatherManager.setSource(v ? 'real' : 'simulation')} label="Реальная погода Москвы" hint="Open-Meteo; при ошибке — симуляция" />
-          <Toggle on={s.clockMode === 'real'} onChange={(v) => s.patch({ clockMode: v ? 'real' : 'accelerated' })} label="Реальное время суток" hint="Свет следует за настоящими часами Москвы" />
-          <Toggle on={s.lowPerf} onChange={(v) => s.patch({ lowPerf: v })} label="Экономичный режим" hint="Меньше частиц и людей — для слабых устройств" />
+          <Toggle on={weatherSource === 'real'} onChange={(v) => weatherManager.setSource(v ? 'real' : 'simulation')} label="Реальная погода Москвы" hint="Open-Meteo; при ошибке — симуляция" />
+          <Toggle on={clockMode === 'real'} onChange={(v) => patch({ clockMode: v ? 'real' : 'accelerated' })} label="Реальное время суток" hint="Свет следует за настоящими часами Москвы" />
+          <Toggle on={lowPerf} onChange={(v) => patch({ lowPerf: v })} label="Экономичный режим" hint="Меньше частиц и людей — для слабых устройств" />
         </div>
         <div>
           <div className="mb-1 text-[11px] uppercase tracking-widest text-[#fff3e2]/45">Погода вручную</div>
@@ -125,7 +129,7 @@ function SettingsPanel({ close }: { close: () => void }) {
             {WEATHER_KINDS.map((k) => (
               <button
                 key={k} type="button" onClick={() => { weatherManager.setSource('simulation'); weatherManager.force(k) }}
-                className={`rounded-full border px-3 py-1 text-xs transition hover:bg-white/12 ${s.weatherKind === k ? 'border-[#ffb27a]/70 bg-[#ffb27a]/15' : 'border-white/12'}`}
+                className={`rounded-full border px-3 py-1 text-xs transition hover:bg-white/12 ${weatherKind === k ? 'border-[#ffb27a]/70 bg-[#ffb27a]/15' : 'border-white/12'}`}
                 data-testid={`weather-${k}`}
               >
                 {WEATHER_PRESETS[k].label}

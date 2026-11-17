@@ -231,6 +231,17 @@ export class NativePoly {
     // последний источник, который остановится, — несущий; по его onended освобождаем ноту
     const carrier = sources[0]
     carrier.onended = () => this.release(v)
+    // модулятор (может кончиться раньше несущей) отсоединяется сам — граф не копит «мёртвые» узлы
+    for (const src of sources) {
+      if (src === carrier) continue
+      src.onended = () => {
+        try {
+          src.disconnect()
+        } catch {
+          /* уже отключён */
+        }
+      }
+    }
   }
 
   private release(v: LiveNote): void {

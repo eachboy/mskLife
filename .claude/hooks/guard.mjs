@@ -10,7 +10,7 @@ const ti = input.tool_input || {}
 // ---------- Shell ----------
 if (tool === 'Bash' || tool === 'PowerShell') {
   const cmd = String(ti.command || '')
-  const PROTECTED = /(^|[\s"'\/\\])(src|\.claude|public|e2e|scripts|setting|assets|PROGRESS\.md|CLAUDE\.md|CLAUDE_TOOLS\.md|ASSET_PIPELINE\.md|DEVELOPMENT_WORKFLOW\.md|QA_CHECKLIST\.md|package(-lock)?\.json|\.git)([\s"'\/\\]|$)|(^|\s)(\.|\*|\/|~)(\s|$)/
+  const PROTECTED = /(^|[\s"'\/\\])(src|\.claude|public|e2e|scripts|setting|assets|docs|PROGRESS\.md|CLAUDE\.md|package(-lock)?\.json|\.git)([\s"'\/\\]|$)|(^|\s)(\.|\*|\/|~)(\s|$)/
   const isDelete =
     /\brm\s+(-[a-zA-Z]*\s+)*/.test(cmd) ||
     /\b(Remove-Item|rmdir|rd|del|erase)\b/i.test(cmd) ||

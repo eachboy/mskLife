@@ -31,7 +31,7 @@ steps.push(run('build', 'npx', ['vite', 'build', '--outDir', `${OUT}/dist`, '--e
 if (!SKIP_E2E) {
   steps.push(run('e2e-functional', 'npx', ['playwright', 'test', 'e2e/app.spec.ts', 'e2e/qa-full.spec.ts', 'e2e/qa-stress.spec.ts', '--reporter=line']))
   steps.push(run('e2e-a11y', 'npx', ['playwright', 'test', 'e2e/a11y.spec.ts', '--reporter=line']))
-  steps.push(run('e2e-visual', 'npx', ['playwright', 'test', 'e2e/visual.spec.ts', '--reporter=line']))
+  steps.push(run('e2e-visual', 'npx', ['playwright', 'test', 'e2e/visual3d.spec.ts', '--reporter=line']))
 }
 
 // ---------- perf на production-сборке ----------

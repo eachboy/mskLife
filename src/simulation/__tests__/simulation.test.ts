@@ -18,16 +18,17 @@ describe('planTravel (no teleporting)', () => {
   it('empty for same place', () => expect(planTravel('arbat', 'arbat', 'clear')).toEqual([]))
   it('every route ends near the destination and uses intermediate scenes', () => {
     const rng = mulberry32(7)
-    for (const a of outdoor) for (const b of outdoor) {
-      if (a === b) continue
-      const chain = planTravel(a, b, 'clear', rng)
-      expect(chain.length).toBeGreaterThan(0)
-      const last = chain[chain.length - 1]
-      expect(last.anchor === b || last.destination === b).toBe(true)
-      for (const e of chain) expect(e.duration).toBeGreaterThan(0)
-      // длинный путь — не пешком
-      if (chain.length === 1) expect(chain[0].kind).toBe('stroll')
-    }
+    for (const a of outdoor)
+      for (const b of outdoor) {
+        if (a === b) continue
+        const chain = planTravel(a, b, 'clear', rng)
+        expect(chain.length).toBeGreaterThan(0)
+        const last = chain[chain.length - 1]
+        expect(last.anchor === b || last.destination === b).toBe(true)
+        for (const e of chain) expect(e.duration).toBeGreaterThan(0)
+        // длинный путь — не пешком
+        if (chain.length === 1) expect(chain[0].kind).toBe('stroll')
+      }
   })
   it('bad weather avoids long walks', () => {
     const rng = mulberry32(3)

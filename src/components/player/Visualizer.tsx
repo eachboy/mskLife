@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { audioLifecycle } from '../../audio/core/AudioLifecycleManager'
 import { useAudioStore, VIZ_MODES, type VizMode } from '../../stores/audioStore'
 import { useWorldStore } from '../../stores/worldStore'
+import { isPageHidden, onPageVisibility } from '../../utils/pageVisibility'
 
 /**
  * Визуализатор реального сигнала: читает AnalyserNode мастер-шины (после soft-clip и громкости),
@@ -25,16 +26,33 @@ export function logBands(n: number, lo = 50, hi = 12000): Array<[number, number]
 }
 
 /** Средний уровень полос (0..1) из спектра в dB. Пустые/бесконечные значения = тишина. */
-export function bandLevels(db: Float32Array, sampleRate: number, bands: Array<[number, number]>): number[] {
-  const binHz = sampleRate / 2 / db.length
-  return bands.map(([lo, hi]) => {
-    const a = Math.max(1, Math.floor(lo / binHz))
-    const b = Math.max(a + 1, Math.min(db.length, Math.ceil(hi / binHz)))
+export function bandLevels(
+  db: Float32Array,
+  sampleRate: number,
+  bands: Array<[number, number]>,
+  out: Float32Array = new Float32Array(bands.length),
+  bins: Int32Array = bandBins(db.length, sampleRate, bands),
+): Float32Array {
+  for (let k = 0; k < bands.length; k++) {
+    const a = bins[k * 2]
+    const b = bins[k * 2 + 1]
     let m = -Infinity
     for (let i = a; i < b; i++) if (db[i] > m) m = db[i]
-    if (!Number.isFinite(m)) return 0
-    return Math.min(1, Math.max(0, (m - MIN_DB) / (MAX_DB - MIN_DB)))
-  })
+    out[k] = Number.isFinite(m) ? Math.min(1, Math.max(0, (m - MIN_DB) / (MAX_DB - MIN_DB))) : 0
+  }
+  return out
+}
+
+/** Границы полос в бинах [a, b) подряд: a0,b0,a1,b1… Считаются один раз на анализатор. */
+export function bandBins(binCount: number, sampleRate: number, bands: Array<[number, number]>): Int32Array {
+  const binHz = sampleRate / 2 / binCount
+  const res = new Int32Array(bands.length * 2)
+  for (let k = 0; k < bands.length; k++) {
+    const a = Math.max(1, Math.floor(bands[k][0] / binHz))
+    res[k * 2] = a
+    res[k * 2 + 1] = Math.max(a + 1, Math.min(binCount, Math.ceil(bands[k][1] / binHz)))
+  }
+  return res
 }
 
 export function Visualizer() {
@@ -56,7 +74,9 @@ export function Visualizer() {
     g.scale(dpr, dpr)
     const n = mode === 'bars' ? 6 : 28
     const bands = logBands(n)
-    const smooth = new Array<number>(n).fill(0)
+    const smooth = new Float32Array(n)
+    const lv = new Float32Array(n)
+    let bins: Int32Array | null = null
     let freq: Float32Array<ArrayBuffer> | null = null
     let time: Float32Array<ArrayBuffer> | null = null
     let an: AnalyserNode | null = null
@@ -66,7 +86,7 @@ export function Visualizer() {
     let raf = 0
 
     const draw = (now: number) => {
-      raf = requestAnimationFrame(draw)
+      raf = isPageHidden() ? 0 : requestAnimationFrame(draw)
       if (now - last < frameMs) return
       last = now
       const a = audioLifecycle.analyser('master')
@@ -74,6 +94,7 @@ export function Visualizer() {
         an = a
         freq = a ? new Float32Array(a.frequencyBinCount) : null
         time = a ? new Float32Array(a.fftSize) : null
+        bins = a ? bandBins(a.frequencyBinCount, a.context.sampleRate, bands) : null
       }
       g.clearRect(0, 0, W, H)
       g.fillStyle = '#ffb27a'
@@ -107,7 +128,8 @@ export function Visualizer() {
             }
         }
         if (live && an && freq) an.getFloatFrequencyData(freq)
-        const lv = live && an && freq ? bandLevels(freq, an.context.sampleRate, bands) : smooth.map(() => 0)
+        if (live && an && freq && bins) bandLevels(freq, an.context.sampleRate, bands, lv, bins)
+        else lv.fill(0)
         for (let i = 0; i < n; i++) {
           // быстрая атака, плавный спад — не дёргается, но реагирует на удары
           smooth[i] = lv[i] > smooth[i] ? lv[i] : smooth[i] * 0.82 + lv[i] * 0.18
@@ -140,8 +162,19 @@ export function Visualizer() {
         root.dataset.level = level.toFixed(2)
       }
     }
-    raf = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(raf)
+    // скрытая вкладка: цикл полностью останавливается (0 GPU), при возврате — сразу же возобновляется
+    const offVis = onPageVisibility((hidden) => {
+      if (hidden) {
+        cancelAnimationFrame(raf)
+        raf = 0
+      } else if (!raf) raf = requestAnimationFrame(draw)
+    })
+    if (!isPageHidden()) raf = requestAnimationFrame(draw)
+    return () => {
+      offVis()
+      cancelAnimationFrame(raf)
+      raf = 0
+    }
   }, [mode, lowPerf])
 
   if (mode === 'off') return null

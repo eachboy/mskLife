@@ -1,7 +1,10 @@
 import { LOCATIONS } from '../../data/locations'
 import { useAudioStore } from '../../stores/audioStore'
+import { useMapStore } from '../../stores/mapStore'
+import { installMediaIntegration } from './mediaIntegration'
 import { useWorldStore } from '../../stores/worldStore'
-import type { LocationId, ScenarioEvent } from '../../types'
+import { TIME_SCALE, eventRealSeconds } from '../../simulation/time/simClock'
+import type { LocationId, ScenarioEvent, TimeMode } from '../../types'
 import { eventBus } from '../../utils/eventBus'
 import type { AudioMixer, BusId } from '../engine/AudioMixer'
 import type { CitySoundEngine } from '../engine/CitySoundEngine'
@@ -12,6 +15,42 @@ import type { WeatherSoundEngine } from '../engine/WeatherSoundEngine'
 
 /** Частота обновления погоды/города, с (таймер Tone-контекста — не троттлится в фоне, в отличие от setInterval). */
 const UPDATE_SEC = 0.2
+
+// ───────── счётчик AudioContext (только dev / ?audiodebug) ─────────
+
+const ctxRegistry: BaseAudioContext[] = []
+let counterInstalled = false
+
+/**
+ * Оборачивает конструктор AudioContext, чтобы диагностика видела все созданные контексты (B-11).
+ * Вызывать ДО импорта tone (standardized-audio-context берёт конструктор при загрузке модуля).
+ */
+export function installContextCounter(win: Window & typeof globalThis = window): void {
+  if (counterInstalled) return
+  const Native = win.AudioContext as typeof AudioContext | undefined
+  if (!Native) return
+  counterInstalled = true
+  class Counted extends Native {
+    constructor(...args: ConstructorParameters<typeof AudioContext>) {
+      super(...args)
+      ctxRegistry.push(this)
+    }
+  }
+  win.AudioContext = Counted
+}
+
+/** Число живых AudioContext, созданных после installContextCounter(); null — счётчик не установлен. */
+export function liveContextCount(): number | null {
+  return counterInstalled ? ctxRegistry.filter((c) => (c.state as string) !== 'closed').length : null
+}
+
+/** Только для тестов. */
+export function resetContextCounter(): void {
+  ctxRegistry.length = 0
+  counterInstalled = false
+}
+
+const debugEnabled = (): boolean => import.meta.env.DEV || (typeof location !== 'undefined' && location.search.includes('audiodebug'))
 
 export type TestSignal = 'sine-220' | 'sine-440' | 'sine-1k' | 'sweep' | 'pink'
 
@@ -35,7 +74,10 @@ export interface AudioDiagnostics {
   nodes: { music: number; weather: number; city: number; travel: number }
   /** фаза путешествия, которую сейчас озвучивает travel-движок */
   travelPhase: string | null
+  /** сколько аудио-сессий создано за жизнь страницы */
   instances: number
+  /** живых (не closed) AudioContext на странице; null — счётчик не установлен (только dev / ?audiodebug) */
+  contexts: number | null
   solo: MusicLayer[] | null
   testSignal: TestSignal | null
   lastRecovery: string | null
@@ -79,6 +121,7 @@ class AudioLifecycleManager {
     const cleanups: Array<() => void> = []
     const aborted = () => gen !== this.gen
     try {
+      if (debugEnabled()) installContextCounter()
       const T = await import('tone')
       const [{ AudioMixer }, { MusicEngine }, { WeatherSoundEngine }, { CitySoundEngine }, { TravelSoundEngine }] = await Promise.all([
         import('../engine/AudioMixer'),
@@ -121,7 +164,7 @@ class AudioLifecycleManager {
       this.session = s
       this.created++
       useAudioStore.getState().setEngineState('running')
-      if (import.meta.env.DEV || location.search.includes('audiodebug')) (window as unknown as { __audio?: unknown }).__audio = { T, mixer, music, weather, city, travel, manager: this }
+      if (debugEnabled()) (window as unknown as { __audio?: unknown }).__audio = { T, mixer, music, weather, city, travel, manager: this }
     } catch (e) {
       console.error('[audio] start failed', e)
       run(cleanups)
@@ -151,12 +194,14 @@ class AudioLifecycleManager {
     }
     const applyEvent = (ev: ScenarioEvent | null) => {
       if (!ev) return
-      travel.onPhase(travelInput(ev))
+      const input = travelInput(ev, useWorldStore.getState().timeMode)
+      // silent (перемотка после фона): ни одноразовых звуков, ни подсказок — только состояние модели
+      travel.onPhase(ev.silent ? { ...input, sounds: [], silent: true } : input)
     }
     const w0 = useWorldStore.getState()
     applyLocation(w0.location)
     // старт посреди поездки: модель встаёт в текущую фазу без одноразовых звуков
-    if (w0.event) travel.onPhase({ ...travelInput(w0.event), sounds: [] })
+    if (w0.event) travel.onPhase({ ...travelInput(w0.event, w0.timeMode), sounds: [], silent: true })
     push(
       useWorldStore.subscribe((w, prev) => {
         // кинематографичный переход (§5.5): занавес → эмбиент проседает; новая сцена → кроссфейд слоёв
@@ -168,6 +213,29 @@ class AudioLifecycleManager {
         if (w.eventKey !== prev.eventKey) applyEvent(w.event)
       }),
     )
+    // карта открыта → «вид сверху»: город и погода глуше (музыка не затрагивается)
+    mixer.setMapOverviewMode(useMapStore.getState().open)
+    push(
+      useMapStore.subscribe((m, prev) => {
+        if (m.open !== prev.open) mixer.setMapOverviewMode(m.open)
+      }),
+    )
+
+    // медиа-клавиши + медиа-центр ОС + заголовок вкладки
+    push(
+      installMediaIntegration({
+        play: () => {
+          useAudioStore.getState().setMusicPlaying(true)
+          void this.ensureRunning('media-play')
+        },
+        pause: () => useAudioStore.getState().setMusicPlaying(false),
+        next: () => {
+          useAudioStore.getState().setMusicPlaying(true)
+          music.nextTrack()
+        },
+      }),
+    )
+
     push(eventBus.on('lightning', ({ distance }) => weather.onLightning(distance)))
     push(
       eventBus.on('footstep', ({ surface }) => {
@@ -314,6 +382,7 @@ class AudioLifecycleManager {
       nodes: { music: s.music.stats().nodes, weather: s.weather.nodeCount(), city: s.city.nodeCount(), travel: s.travel.nodeCount() },
       travelPhase: s.travel.state().phase,
       instances: this.created,
+      contexts: liveContextCount(),
       solo: s.music.getSolo(),
       testSignal: this.testKind,
       lastRecovery: this.lastRecovery,
@@ -332,12 +401,13 @@ class AudioLifecycleManager {
   }
 }
 
-function travelInput(ev: ScenarioEvent): TravelSoundInput {
+/** Вход звука поездки: duration — РЕАЛЬНЫЕ секунды фазы (игровые минуты × 60 / масштаб режима времени). */
+export function travelInput(ev: ScenarioEvent, timeMode: TimeMode): TravelSoundInput {
   return {
     phase: ev.phase ?? 'activity',
     mode: ev.mode ?? null,
     indoor: !(LOCATIONS[ev.location]?.outdoor ?? true),
-    duration: ev.duration,
+    duration: eventRealSeconds(ev.duration, TIME_SCALE[timeMode]),
     sounds: ev.sounds ?? [],
   }
 }

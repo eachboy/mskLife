@@ -19,6 +19,8 @@ export interface WorldEvents {
     location: LocationId
     /** длительность фазы, игровые минуты */
     duration: number
+    /** событие проиграно при перемотке после разрыва таймера: без одноразовых звуков */
+    silent?: boolean
   }
   /** звуковая подсказка фазы: турникет, двери, эскалатор, валидатор… */
   'travel-sound': { cue: TravelSoundCue; phase: TravelPhase; mode: TravelMode | null }

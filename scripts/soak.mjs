@@ -127,7 +127,6 @@ const takeAndReset = () =>
       loaf: { n: P.loaf.length, maxBlock: Math.round(Math.max(0, ...P.loaf)) },
       master: { rmsDb: db(Math.sqrt(M.sq / Math.max(1, M.n))), peakDb: db(M.peak), clip: M.clip, nan: M.nan, silentPolls: M.silentPolls, polls: M.polls },
       dom: document.getElementsByTagName('*').length,
-      svgNodes: document.getElementsByTagName('svg').length,
       entities: document.querySelectorAll('[data-testid=entity]').length,
       canvases: document.getElementsByTagName('canvas').length,
       heapPreGC: performance.memory?.usedJSHeapSize ?? 0,
@@ -225,7 +224,7 @@ function writeReport(final) {
     '',
     `- ctx.state не running: ${samples.filter((s) => s.ctxState !== 'running').length} замеров; instances (сессий движка): ${sN?.diag?.instances ?? '?'}`,
     `- currentTime: немонотонных интервалов ${nonMono}; макс. |Δctx − Δwall| ${maxDrift.toFixed(3)} с; скачков Transport (назад или |Δ−Δwall|>1.5 с) ${transportJumps}`,
-    `- lateSteps всего ${lateTotal}, droppedNotes ${droppedTotal}, skippedHits ${sN?.diag?.music.skippedHits ?? '?'}; мастер: clip-сэмплов ${clipTotal}, NaN ${nanTotal}; опросов с тишиной ${samples.reduce((a, s) => a + s.master.silentPolls, 0)} из ${samples.reduce((a, s) => a + s.master.polls, 0)}`,
+    `- lateSteps всего ${lateTotal}, из них ${gcLate} внесены принудительным GC стенда, собственных ${Math.max(0, lateTotal - gcLate)} (порог 0); droppedNotes ${droppedTotal}, skippedHits ${sN?.diag?.music.skippedHits ?? '?'}; мастер: clip-сэмплов ${clipTotal}, NaN ${nanTotal}; опросов с тишиной ${samples.reduce((a, s) => a + s.master.silentPolls, 0)} из ${samples.reduce((a, s) => a + s.master.polls, 0)}`,
     `- long tasks всего ${allLt}, макс ${maxLt} мс; LoAF с blocking > 0: ${samples.reduce((a, s) => a + s.loaf.n, 0)}`,
     `- Ошибки/предупреждения консоли: ${errors.length}${errors.length ? '\n' + errors.slice(0, 20).map((e) => `  - ${e.m.slice(0, 300)}`).join('\n') : ''}`,
     '',
@@ -246,11 +245,17 @@ writeFileSync(`${OUT}/samples.jsonl`, '')
 const t0 = Date.now()
 let prev = null
 let stop = false
+let gcLate = 0
 process.on('SIGINT', () => (stop = true))
 try {
   while (!stop) {
     const r = await takeAndReset()
     const m = await metrics(true)
+    // Принудительный GC через CDP останавливает главный поток на 0.1–0.6 с (long task observer этого не видит)
+    // и съедает lookAhead планировщика (0.3 с) → опоздавшие шаги вносит сам стенд. Считаем их отдельно.
+    await new Promise((res) => setTimeout(res, 700))
+    const lateAfterGc = await page.evaluate(() => window.__audio.manager.diagnostics()?.music.lateSteps ?? 0)
+    gcLate += Math.max(0, lateAfterGc - (r.diag?.music.lateSteps ?? lateAfterGc))
     const w = await world()
     const min = (Date.now() - t0) / 60000
     const s = { min, ...r, ...m, world: w }

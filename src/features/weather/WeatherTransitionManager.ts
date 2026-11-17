@@ -4,6 +4,7 @@ import { eventBus } from '../../utils/eventBus'
 import { clamp, lerp } from '../../utils/math'
 import { WEATHER_PRESETS, isRainy, isSnowy } from './weatherData'
 
+const SNAP = 0.002
 const KEYS: (keyof WeatherParams)[] = ['cloud', 'rain', 'snow', 'fog', 'wind', 'storm']
 
 /**
@@ -33,7 +34,13 @@ export class WeatherTransitionManager {
     const target = WEATHER_PRESETS[s.weatherKind].params
     const k = 1 - Math.exp(-this.rate * dt)
     const next = { ...s.weather }
-    for (const key of KEYS) next[key] = lerp(next[key], target[key], k)
+    let moved = false
+    for (const key of KEYS) {
+      const from = next[key]
+      // у цели — прилипаем (экспоненциальный хвост иначе вечно «меняет» значение и будит подписчиков)
+      next[key] = Math.abs(target[key] - from) < SNAP ? target[key] : lerp(from, target[key], k)
+      if (next[key] !== from) moved = true
+    }
 
     // накопление снега / мокрый асфальт
     let snowCover = s.snowCover
@@ -45,7 +52,9 @@ export class WeatherTransitionManager {
     if (isRainy(s.weatherKind)) wetness = clamp(wetness + dt * 0.06 * next.rain)
     else wetness = clamp(wetness - dt * (0.012 + next.cloud * -0.004))
 
-    s.patch({ weather: next, snowCover, wetness })
+    if (moved || snowCover !== s.snowCover || wetness !== s.wetness) {
+      s.patch({ weather: moved ? next : s.weather, snowCover, wetness })
+    }
 
     // молнии
     if (next.storm > 0.5) {

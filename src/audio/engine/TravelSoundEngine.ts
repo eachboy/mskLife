@@ -4,7 +4,7 @@ import type { AudioMixer } from './AudioMixer'
 import { NoiseBank, NoiseBurst, type ToneModule, disposeAll, safe } from './audioUtils'
 import { GatedLayer, OutputGate } from './layerGate'
 
-/** Фаза путешествия глазами звука (из worldStore.event). duration — реальные секунды фазы. */
+/** Фаза путешествия глазами звука (из worldStore.event). duration — реальные секунды фазы (eventRealSeconds). */
 export interface TravelSoundInput {
   phase?: TravelPhase | null
   mode?: TravelMode | null
@@ -12,6 +12,11 @@ export interface TravelSoundInput {
   indoor: boolean
   duration: number
   sounds?: TravelSoundCue[]
+  /**
+   * Перемотка после разрыва таймера (REALTIME spec §7.2): без одноразовых звуков и случайных подсказок,
+   * модель встаёт в целевое состояние за SILENT_RAMP секунд.
+   */
+  silent?: boolean
 }
 
 export type StepSurface = 'asphalt' | 'snow' | 'grass' | 'floor'
@@ -52,6 +57,8 @@ const approach = (v: number, target: number, up: number, down: number, dt: numbe
 
 /** Время рампы параметров на каждом обновлении (≥ периода обновления → кусочно-линейная непрерывная кривая). */
 const PARAM_RAMP = 0.25
+/** Рампа параметров при «тихой» установке состояния (silent), с. */
+const SILENT_RAMP = 0.5
 /** На сколько вперёд планируются ритмические события, с (от ctx.now()). */
 const HORIZON = 0.4
 
@@ -153,6 +160,8 @@ export class TravelSoundEngine {
   private nextStep = 0
   private stepFoot = 0
   private nextWander = 0
+  /** до этого времени контекста рампы параметров длятся SILENT_RAMP */
+  private slowRampUntil = 0
   private lastValue = new WeakMap<object, number>()
   /** счётчики для диагностики/тестов */
   readonly counters = { phases: 0, cues: 0, steps: 0 }
@@ -262,6 +271,7 @@ export class TravelSoundEngine {
     const phase = e.phase ?? 'activity'
     this.phase = phase
     const now = this.ctx.now()
+    const silent = e.silent === true
     const d = Math.max(0.3, Number.isFinite(e.duration) ? e.duration : 1)
     const tr = this.train
     const ve = this.vehicle
@@ -335,11 +345,11 @@ export class TravelSoundEngine {
         vehicleIn('bus', 1, false)
         ve.targetSpeed = 0.85
         this.wander = true
-        if (Math.random() < 0.25) this.turnSignal(now + 0.5, 4 + Math.random() * 3)
+        if (!silent && Math.random() < 0.25) this.turnSignal(now + 0.5, 4 + Math.random() * 3)
         break
       case 'bus-traffic-light':
         vehicleIn('bus', 1, false)
-        if (Math.random() < 0.5) this.turnSignal(now + 0.2, 3 + Math.random() * 2)
+        if (!silent && Math.random() < 0.5) this.turnSignal(now + 0.2, 3 + Math.random() * 2)
         break
       case 'bus-alighting':
         vehicleIn('bus', 1, false)
@@ -356,7 +366,7 @@ export class TravelSoundEngine {
         vehicleIn('taxi', 1, false)
         ve.targetSpeed = 0.8
         this.wander = true
-        if (Math.random() < 0.4) this.turnSignal(now + 1, 3 + Math.random() * 3)
+        if (!silent && Math.random() < 0.4) this.turnSignal(now + 1, 3 + Math.random() * 3)
         break
       case 'taxi-alighting':
         vehicleIn('taxi', 1, false)
@@ -366,12 +376,28 @@ export class TravelSoundEngine {
         trainOut()
         vehicleOut()
         // «тук… тук» пока красный, частые щелчки на зелёный и ещё немного на переходе
-        this.crossing = { fastAt: now + Math.max(1, d * 0.65), end: now + Math.max(1.6, d) + 1.6 }
-        this.nextTick = now + 0.05
+        if (!silent) this.crossing = { fastAt: now + Math.max(1, d * 0.65), end: now + Math.max(1.6, d) + 1.6 }
+        if (!silent) this.nextTick = now + 0.05
         break
       default:
         trainOut()
         vehicleOut()
+    }
+    if (silent) {
+      // сразу в целевое состояние (модель), слышимая рампа — SILENT_RAMP; без подсказок и тиков
+      this.crossing = null
+      this.turnUntil = 0
+      for (const m of [tr, ve]) {
+        if (m.next) {
+          m.targetSpeed = m.next.speed
+          m.targetPresence = m.next.presence
+          m.next = null
+        }
+        m.speed = m.targetSpeed
+        m.presence = m.targetPresence
+      }
+      this.slowRampUntil = now + SILENT_RAMP + 0.5
+      return
     }
     for (const cue of e.sounds ?? []) this.cue(cue, now)
   }
@@ -495,6 +521,7 @@ export class TravelSoundEngine {
     const dt = this.lastUpdate < 0 ? 0.2 : Math.min(1, Math.max(0, cur - this.lastUpdate))
     this.lastUpdate = cur
     const horizon = now + HORIZON
+    const pr = now < this.slowRampUntil ? SILENT_RAMP : PARAM_RAMP
     const tr = this.train
     const ve = this.vehicle
 
@@ -517,7 +544,7 @@ export class TravelSoundEngine {
 
     // поезд
     const trainLevel = tr.presence * (0.2 + 0.8 * tr.speed) * 0.38
-    this.trainBed.set(trainLevel, PARAM_RAMP)
+    this.trainBed.set(trainLevel, pr)
     if (this.trainBed.active) {
       this.ramp(this.trainLp.frequency, 110 + 650 * tr.speed)
       this.ramp(this.trainBp.frequency, 450 + 900 * tr.speed)
@@ -525,7 +552,7 @@ export class TravelSoundEngine {
     }
     const braking = tr.speed < trainPrev - 1e-4 && tr.targetSpeed < tr.speed
     const brake = braking && tr.speed < 0.6 ? Math.min(1, (0.6 - tr.speed) / 0.25) * Math.min(1, tr.speed / 0.06) : 0
-    this.squealBed.set(tr.presence * brake * 0.22, PARAM_RAMP)
+    this.squealBed.set(tr.presence * brake * 0.22, pr)
     if (this.squealBed.active) {
       this.ramp(this.squealBp.frequency, 1900 + 1500 * tr.speed)
       this.ramp(this.squealBp2.frequency, (1900 + 1500 * tr.speed) * 1.36)
@@ -549,7 +576,7 @@ export class TravelSoundEngine {
     // автобус / такси
     const v = VEHICLE[this.vehicleKind]
     // на холостых тише, чем на ходу
-    this.vehicleBed.set(ve.presence * v.level * (0.6 + 0.4 * ve.speed), PARAM_RAMP)
+    this.vehicleBed.set(ve.presence * v.level * (0.6 + 0.4 * ve.speed), pr)
     if (this.vehicleBed.active) {
       this.ramp(this.engOsc.frequency, v.f0 + (v.f1 - v.f0) * ve.speed)
       this.ramp(this.engLp.frequency, v.lp0 + (v.lp1 - v.lp0) * ve.speed)
@@ -562,7 +589,7 @@ export class TravelSoundEngine {
     }
 
     // эскалатор
-    this.escBed.set(this.escalator ? 0.2 : 0, this.escalator ? 0.8 : 1.2)
+    this.escBed.set(this.escalator ? 0.2 : 0, now < this.slowRampUntil ? SILENT_RAMP : this.escalator ? 0.8 : 1.2)
     if (this.escalator) {
       if (this.nextEsc < now) this.nextEsc = now + 0.3
       while (this.nextEsc < horizon) {
@@ -607,7 +634,8 @@ export class TravelSoundEngine {
     const last = this.lastValue.get(p)
     if (last !== undefined && Math.abs(last - v) < Math.max(1e-4, Math.abs(v) * 0.002)) return
     this.lastValue.set(p, v)
-    safe(() => (p as ToneNS.Param<'gain'>).linearRampTo(v, PARAM_RAMP))
+    const sec = this.ctx.now() < this.slowRampUntil ? SILENT_RAMP : PARAM_RAMP
+    safe(() => (p as ToneNS.Param<'gain'>).linearRampTo(v, sec))
   }
 
   // ───────── диагностика ─────────

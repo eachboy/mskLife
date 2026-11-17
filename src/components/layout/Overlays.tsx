@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LOCATIONS } from '../../data/locations'
 import { useWorldStore } from '../../stores/worldStore'
+import { isPageHidden, onPageVisibility } from '../../utils/pageVisibility'
 
 /** Кинематографичный «занавес» при смене локации: затемнение + чёрные полосы. */
 export function Curtain() {
@@ -46,7 +47,7 @@ export function TitleCard() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 6 }}
           transition={{ duration: 0.6, ease: 'easeOut' }}
-          className="pointer-events-none absolute bottom-[150px] right-4 z-10 max-w-[70vw] rounded-2xl px-4 py-2.5 text-right md:bottom-[112px] md:right-7 md:max-w-sm"
+          className="zen-ui pointer-events-none absolute bottom-[150px] right-4 z-10 max-w-[70vw] rounded-2xl px-4 py-2.5 text-right md:bottom-[112px] md:right-7 md:max-w-sm"
           style={{ background: 'rgba(20,14,30,.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
           data-testid="title-card"
         >
@@ -66,7 +67,7 @@ export function TopBar() {
   const def = LOCATIONS[location]
   const anchorName = event && event.anchor !== location ? LOCATIONS[event.anchor].name : null
   return (
-    <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-2xl border border-white/10 bg-[#1b1530]/55 px-3.5 py-2.5 shadow-[0_6px_24px_rgba(10,6,24,.35)] backdrop-blur-md md:left-5 md:top-5" data-testid="top-bar" style={{ textShadow: '0 1px 2px rgba(20,10,30,.6)' }}>
+    <div className="zen-ui pointer-events-none absolute left-3 top-3 z-10 rounded-2xl border border-white/10 bg-[#1b1530]/55 px-3.5 py-2.5 shadow-[0_6px_24px_rgba(10,6,24,.35)] backdrop-blur-md md:left-5 md:top-5" data-testid="top-bar" style={{ textShadow: '0 1px 2px rgba(20,10,30,.6)' }}>
       <div className="font-display text-sm font-medium tracking-[0.35em] text-[#fff3e2]">
         MOSCOW<span className="text-[#ffb27a]"> LIFE</span>
       </div>
@@ -81,20 +82,38 @@ export function TopBar() {
 
 /** Ненавязчивая подпись о происходящем. */
 export function CaptionToast() {
-  const caption = useWorldStore((s) => s.caption)
-  const key = useWorldStore((s) => s.captionKey)
+  // В скрытой вкладке подпись заморожена (ноль коммитов React: показ + скрытие через 7.5 с давали
+  // 2–3 коммита на каждую подпись). Подписи, пришедшие в фоне, при возврате не показываются.
+  const seen = useRef({ caption: '', key: 0 })
+  const skipKey = useRef(-1)
+  const caption = useWorldStore((s) => {
+    if (!isPageHidden()) seen.current.caption = s.caption
+    return seen.current.caption
+  })
+  const key = useWorldStore((s) => {
+    if (!isPageHidden()) seen.current.key = s.captionKey
+    return seen.current.key
+  })
   const started = useWorldStore((s) => s.started)
   const [visible, setVisible] = useState(false)
 
+  useEffect(
+    () =>
+      onPageVisibility((hidden) => {
+        if (!hidden) skipKey.current = useWorldStore.getState().captionKey
+      }),
+    [],
+  )
+
   useEffect(() => {
-    if (!caption) return
+    if (!caption || key === skipKey.current) return
     setVisible(true)
     const t = setTimeout(() => setVisible(false), 7500)
     return () => clearTimeout(t)
   }, [key, caption])
 
   return (
-    <div className="pointer-events-none absolute left-3 top-[80px] z-10 max-w-[78vw] md:left-5 md:top-[88px] md:max-w-sm" aria-live="polite">
+    <div className="zen-ui pointer-events-none absolute left-3 top-[80px] z-10 max-w-[78vw] md:left-5 md:top-[88px] md:max-w-sm" aria-live="polite">
       <AnimatePresence mode="wait">
         {started && visible && caption && (
           <motion.div

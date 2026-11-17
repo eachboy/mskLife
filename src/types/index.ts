@@ -313,4 +313,12 @@ export interface ScenarioEventTravelFields {
   sounds?: TravelSoundCue[]
   /** показывать ли подпись тостом (мелкие фазы — нет, но caption всё равно заполнен) */
   announce?: boolean
+  /** перемотка после разрыва таймера: без занавеса, тостов и одноразовых звуков */
+  silent?: boolean
 }
+
+/** Режим времени симуляции: realtime = 1:1, иначе игровых минут за реальную минуту. */
+export type TimeMode = 'realtime' | 'x5' | 'x15' | 'x60'
+
+/** Уровень качества 3D (План §9). */
+export type QualityLevel = 'high' | 'medium' | 'low'

@@ -257,6 +257,16 @@ export class MusicEngine {
     this.gate.gain.rampTo(v ? 1 : 0, v ? 1.2 : 1.6)
   }
 
+  /**
+   * «Следующий трек» (медиа-клавиша): заново собирает фразу и переходит к ней на ближайшем шаге сетки 16n.
+   * Уже запланированные ноты дозвучивают свои релизы, поэтому обрыва нет; Transport и BPM-рампа не трогаются.
+   */
+  nextTrack(): void {
+    if (this.disposed || this.eventId === null) return
+    this.upcoming = this.plan()
+    if (this.current) this.step = this.current.bars * 16
+  }
+
   /** Соло слоёв (диагностика). null — все слои. */
   setSolo(layers: MusicLayer[] | null): void {
     this.solo = layers && layers.length ? layers : null

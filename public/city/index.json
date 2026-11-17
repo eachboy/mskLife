@@ -1,0 +1,225 @@
+{
+  "version": 2,
+  "districts": {
+    "arbat": {
+      "file": "arbat.bin",
+      "bbox": {
+        "minX": -2252.68,
+        "maxX": -859.28,
+        "minZ": -344.56,
+        "maxZ": 1053.44,
+        "maxY": 172
+      },
+      "center": {
+        "x": -1553.68,
+        "z": 353.84
+      },
+      "buildings": 1075,
+      "vertices": 59250,
+      "indices": 100242,
+      "bytes": 116496,
+      "gzipBytes": 49714,
+      "sha256": "759352113f84d363a54c99f1f94ac7314ef21ffd67eacd485d01abbfb8ee8b6a"
+    },
+    "gorky-park": {
+      "file": "gorky-park.bin",
+      "bbox": {
+        "minX": -1687.94,
+        "maxX": -290.74,
+        "minZ": 1756.24,
+        "maxZ": 3144.94,
+        "maxY": 67.2
+      },
+      "center": {
+        "x": -989.84,
+        "z": 2454.74
+      },
+      "buildings": 345,
+      "vertices": 16640,
+      "indices": 27918,
+      "bytes": 32722,
+      "gzipBytes": 15619,
+      "sha256": "922ee189c3f1919f55621e86e390ed27aa746afe67e302e3c50978f5e74166d9"
+    },
+    "khamovniki": {
+      "file": "khamovniki.bin",
+      "bbox": {
+        "minX": -3112.62,
+        "maxX": -1719.82,
+        "minZ": 1235.25,
+        "maxZ": 2633.45,
+        "maxY": 51.2
+      },
+      "center": {
+        "x": -2418.22,
+        "z": 1935.05
+      },
+      "buildings": 693,
+      "vertices": 35180,
+      "indices": 59187,
+      "bytes": 69072,
+      "gzipBytes": 31549,
+      "sha256": "585fcf18ee1fef5801bb60b958134d79e1cc06af8af86b582b29e212f3f542f9"
+    },
+    "kitay-gorod": {
+      "file": "kitay-gorod.bin",
+      "bbox": {
+        "minX": 222.13,
+        "maxX": 1620.43,
+        "minZ": -964.08,
+        "maxZ": 433.52,
+        "maxY": 71
+      },
+      "center": {
+        "x": 920.93,
+        "z": -265.38
+      },
+      "buildings": 812,
+      "vertices": 60335,
+      "indices": 103902,
+      "bytes": 119504,
+      "gzipBytes": 55644,
+      "sha256": "4a9e9dd29167bb252b3df64158659e111aebbf032768c166293314d041095d8a"
+    },
+    "moscow-city": {
+      "file": "moscow-city.bin",
+      "bbox": {
+        "minX": -5596.16,
+        "maxX": -4206.26,
+        "minZ": -399.61,
+        "maxZ": 979.39,
+        "maxY": 354
+      },
+      "center": {
+        "x": -4905.36,
+        "z": 287.49
+      },
+      "buildings": 211,
+      "vertices": 11545,
+      "indices": 19506,
+      "bytes": 22700,
+      "gzipBytes": 11414,
+      "sha256": "fda82b6751b9335dceb980f7e8f4b8efe0bf7ab20827a6e3f8d753eac8dbd034"
+    },
+    "neskuchny": {
+      "file": "neskuchny.bin",
+      "bbox": {
+        "minX": -2315.42,
+        "maxX": -916.92,
+        "minZ": 2636.18,
+        "maxZ": 4028.18,
+        "maxY": 44.8
+      },
+      "center": {
+        "x": -1616.32,
+        "z": 3328.28
+      },
+      "buildings": 271,
+      "vertices": 12830,
+      "indices": 21468,
+      "bytes": 25166,
+      "gzipBytes": 12323,
+      "sha256": "afb80c180e29054f199df297b49aa17b037b064bd6d05353573d1f19f8c80951"
+    },
+    "patriarshy": {
+      "file": "patriarshy.bin",
+      "bbox": {
+        "minX": -2212.89,
+        "maxX": -817.69,
+        "minZ": -2114.15,
+        "maxZ": -715.65,
+        "maxY": 54.4
+      },
+      "center": {
+        "x": -1516.09,
+        "z": -1415.35
+      },
+      "buildings": 1092,
+      "vertices": 64255,
+      "indices": 109158,
+      "bytes": 126494,
+      "gzipBytes": 54422,
+      "sha256": "ce3f83ef7d11e37df2cbb3ddf5b02a6822d882672235f8efe0a8c53fa15873a4"
+    },
+    "tverskaya": {
+      "file": "tverskaya.bin",
+      "bbox": {
+        "minX": -1457.84,
+        "maxX": -58.84,
+        "minZ": -2112.65,
+        "maxZ": -715.65,
+        "maxY": 51.2
+      },
+      "center": {
+        "x": -758.04,
+        "z": -1415.35
+      },
+      "buildings": 1160,
+      "vertices": 69160,
+      "indices": 117648,
+      "bytes": 136332,
+      "gzipBytes": 59305,
+      "sha256": "2affc7017aaa3f2a520aed8eabffb9243d222c80911981e7093874102be64e36"
+    },
+    "vdnh": {
+      "file": "vdnh.bin",
+      "bbox": {
+        "minX": 566.29,
+        "maxX": 1953.09,
+        "minZ": -8936.36,
+        "maxZ": -7541.46,
+        "maxY": 80
+      },
+      "center": {
+        "x": 1265.49,
+        "z": -8237.76
+      },
+      "buildings": 256,
+      "vertices": 17775,
+      "indices": 30477,
+      "bytes": 35128,
+      "gzipBytes": 17126,
+      "sha256": "aa6e6a8d43142ad01a835f6f432d39158b3d2f854fb8bac5a2bf281c1f256bd7"
+    },
+    "zamoskvorechye": {
+      "file": "zamoskvorechye.bin",
+      "bbox": {
+        "minX": -57.09,
+        "maxX": 1338.91,
+        "minZ": 726.9,
+        "maxZ": 2125.5,
+        "maxY": 54.4
+      },
+      "center": {
+        "x": 639.01,
+        "z": 1426.4
+      },
+      "buildings": 1162,
+      "vertices": 55180,
+      "indices": 92370,
+      "bytes": 108126,
+      "gzipBytes": 45617,
+      "sha256": "b549084288aabbe30f8275f2b14ad6872293aa42a342ad358861d5bb0915f164"
+    },
+    "zaryadye": {
+      "file": "zaryadye.bin",
+      "bbox": {
+        "minX": -1.8,
+        "maxX": 1394.1,
+        "minZ": -621.2,
+        "maxZ": 776.9,
+        "maxY": 71
+      },
+      "center": {
+        "x": 695.4,
+        "z": 77.4
+      },
+      "buildings": 625,
+      "vertices": 54040,
+      "indices": 93666,
+      "bytes": 107228,
+      "gzipBytes": 50851,
+      "sha256": "cbfa218752bdc20c4dc59912d2d9f9ba133a7594446df06049e6f231201c3fe8"
+    }
+  }
+}

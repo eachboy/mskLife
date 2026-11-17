@@ -4,13 +4,31 @@ import type {
   CharacterPose,
   DayPhase,
   LocationId,
+  QualityLevel,
   ScenarioEvent,
   ScenarioMode,
   Season,
+  TransitLineRef,
+  TravelMode,
+  TimeMode,
   TravelState,
   WeatherKind,
   WeatherParams,
 } from '../types'
+
+/** Участок поездки для карты: фаза события из planTrip. */
+export interface PlanLeg {
+  from: string
+  to: string
+  mode: TravelMode
+  line?: TransitLineRef
+  /** уличное место-назначение всей поездки */
+  dest?: LocationId
+  /** длительность участка, игровые минуты */
+  duration: number
+  /** участок, который герой проходит сейчас */
+  current: boolean
+}
 
 export type WeatherSource = 'simulation' | 'real'
 export type ClockMode = 'accelerated' | 'real'
@@ -19,8 +37,12 @@ export interface WorldState {
   // ─ запуск
   started: boolean
   lowPerf: boolean
+  /** выбранное качество 3D; фактическое — effectiveQuality(state) */
+  quality: QualityLevel
   // ─ время
   clockMode: ClockMode
+  /** масштаб времени симуляции (по умолчанию 'x60' — прежнее поведение) */
+  timeMode: TimeMode
   /** минуты от начала суток 0..1440 (дробные) */
   minutes: number
   dayCount: number
@@ -47,6 +69,8 @@ export interface WorldState {
   node: string | null
   /** состояние Character Travel State Machine */
   travelState: TravelState
+  /** цепочка текущей/ближайшей поездки (для подсветки маршрута на карте); пусто — героя не в пути */
+  plan: PlanLeg[]
   /** фаза суток по игровым минутам (обновляется при смене) */
   dayPhase: DayPhase
   paused: boolean
@@ -58,6 +82,42 @@ export interface WorldState {
 
   patch: (p: Partial<WorldState>) => void
   setCaption: (c: string) => void
+  /** смена качества + запись в localStorage['ml.quality'] */
+  setQuality: (q: QualityLevel) => void
+}
+
+export const QUALITY_KEY = 'ml.quality'
+
+function readStorage(key: string): string | null {
+  try {
+    if (typeof window === 'undefined') return null
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(key, value)
+  } catch {
+    /* приватный режим / квота — выбор живёт до перезагрузки */
+  }
+}
+
+function asQuality(v: unknown): QualityLevel | null {
+  return v === 'high' || v === 'medium' || v === 'low' ? v : null
+}
+
+/** Начальное quality: localStorage → 'high'. */
+export function readInitialQuality(): QualityLevel {
+  return asQuality(readStorage(QUALITY_KEY)) ?? 'high'
+}
+
+/** Фактическое качество: lowPerf принудительно даёт 'low'. Чистый селектор, в стор не пишется. */
+export function effectiveQuality(s: Pick<WorldState, 'lowPerf' | 'quality'>): QualityLevel {
+  return s.lowPerf ? 'low' : s.quality
 }
 
 export const initialWeather: WeatherParams = { cloud: 0.15, rain: 0, snow: 0, fog: 0, wind: 0.15, storm: 0 }
@@ -73,7 +133,9 @@ function seasonFromDate(d = new Date()): Season {
 export const useWorldStore = create<WorldState>((set) => ({
   started: false,
   lowPerf: false,
+  quality: readInitialQuality(),
   clockMode: 'accelerated',
+  timeMode: 'x60',
   minutes: 8 * 60,
   dayCount: 0,
   season: seasonFromDate(),
@@ -92,6 +154,7 @@ export const useWorldStore = create<WorldState>((set) => ({
   scenarioMode: 'random',
   node: null,
   travelState: 'IDLE',
+  plan: [],
   dayPhase: 'morning',
   paused: false,
   caption: '',
@@ -100,6 +163,10 @@ export const useWorldStore = create<WorldState>((set) => ({
 
   patch: (p) => set(p),
   setCaption: (caption) => set((s) => ({ caption, captionKey: s.captionKey + 1 })),
+  setQuality: (quality) => {
+    writeStorage(QUALITY_KEY, quality)
+    set({ quality })
+  },
 }))
 
 /** Московское время (Europe/Moscow) независимо от часового пояса машины. */

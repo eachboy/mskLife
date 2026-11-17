@@ -318,4 +318,52 @@ describe('TravelSoundEngine — жизненный цикл', () => {
     tick(6)
     expect(e.state().crossing).toBe(false)
   })
+
+  it('B-13: 100 silent-событий подряд — 0 одноразовых звуков, узлов не больше; модель встаёт в целевое состояние', () => {
+    const { w, e, tick } = makeEngine()
+    const created = w.stats.created
+    const nodes = e.nodeCount()
+    let hits = 0
+    const bursts = e as unknown as Record<string, { hit: (...a: unknown[]) => void }>
+    for (const k of ['tick', 'hiss', 'thump', 'click', 'stepLow', 'stepHigh', 'clack']) {
+      const orig = bursts[k].hit.bind(bursts[k])
+      bursts[k].hit = (...a) => {
+        hits++
+        orig(...a)
+      }
+    }
+    const outdoor: Array<[TravelPhase, TravelSoundCue[]]> = PHASES.filter(([p]) => !p.startsWith('metro-train') && !p.startsWith('metro-bo') && p !== 'metro-ride')
+    for (let i = 0; i < 100; i++) {
+      const [phase, sounds] = outdoor[i % outdoor.length]
+      e.onPhase({ phase, mode: null, indoor: false, duration: 0.2 + (i % 5), sounds, silent: true })
+      w.ctx.advance(0.05)
+    }
+    expect(e.counters.cues).toBe(0)
+    expect(e.counters.steps).toBe(0)
+    expect(hits).toBe(0)
+    expect(e.activeOutputs()).toBe(0)
+    expect(w.stats.created).toBe(created)
+    expect(e.nodeCount()).toBe(nodes)
+    expect(w.stats.badValues).toBe(0)
+    e.onPhase({ phase: 'activity', indoor: false, duration: 5, sounds: ['cup'], silent: true })
+    tick(1)
+    expect(hits).toBe(0) // и фоновый update не доигрывает пропущенное
+
+    // silent в поездке: сразу целевое состояние (без «разгона» 7 с), без подсказок
+    e.onPhase({ phase: 'metro-ride', indoor: true, duration: 3, sounds: ['tunnel'], silent: true })
+    expect(e.state().train.speed).toBe(1)
+    expect(e.state().train.presence).toBe(1)
+    expect(e.counters.cues).toBe(0)
+    // обычное событие после silent — подсказки снова работают
+    e.onPhase({ phase: 'metro-turnstile', indoor: true, duration: 3, sounds: ['turnstile'] })
+    expect(e.counters.cues).toBe(1)
+  })
+
+  it('silent: рампы параметров не короче 20 мс и конечны', () => {
+    const { w, e, tick } = makeEngine()
+    e.onPhase({ phase: 'bus-ride', indoor: true, duration: 10, silent: true })
+    tick(2)
+    expect(e.state().vehicle.presence).toBe(1)
+    expect(w.stats.badValues).toBe(0)
+  })
 })

@@ -53,9 +53,11 @@ for (const { w, h } of SIZES) {
     info.annotations.push({ type: 'chrome', description: `${w}×${h}: нижняя панель ${Math.round(bar.height)} px, верхняя ${Math.round(topBar?.height ?? 0)} px, открыто сцены ${Math.round((1 - covered / h) * 100)} %` })
     expect(covered / h, 'UI закрывает не больше 45 % высоты').toBeLessThan(0.45)
 
-    // в SVG сцены (1600×900, xMidYMax slice) видимая доля ширины — для отчёта
-    const vis = Math.min(1, (w / h) / (1600 / 900))
-    info.annotations.push({ type: 'scene-crop', description: `видно ${Math.round(vis * 100)} % ширины кадра 1600 (центр)` })
+    // 3D-кадр: один canvas на весь вьюпорт, кроп по ширине не нужен — проверяем размер canvas
+    const cv = await page.locator('canvas:not([aria-hidden])').first().boundingBox()
+    expect(cv, 'canvas 3D есть').not.toBeNull()
+    info.annotations.push({ type: 'scene-canvas', description: `canvas ${Math.round(cv!.width)}×${Math.round(cv!.height)} при окне ${w}×${h}` })
+    expect(cv!.width, 'canvas на всю ширину').toBeGreaterThanOrEqual(w - 1)
     await page.screenshot({ path: `${OUT}/${info.project.name}-${w}x${h}-scene.png` })
   })
 }

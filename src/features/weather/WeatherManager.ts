@@ -122,7 +122,9 @@ export class WeatherManager {
 
   private updateTemperature() {
     const s = useWorldStore.getState()
-    if (s.weatherSource === 'simulation') s.patch({ temperature: this.simTemp(s.weatherKind) })
+    if (s.weatherSource !== 'simulation') return
+    const t = this.simTemp(s.weatherKind)
+    if (t !== s.temperature) s.patch({ temperature: t }) // пустой patch будил бы все селекторы стора каждые 5 с
   }
 }
 

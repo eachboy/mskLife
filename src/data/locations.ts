@@ -23,7 +23,7 @@ const theme = (t: Partial<SceneTheme> & Pick<SceneTheme, 'landmark'>): SceneThem
 
 /**
  * Каталог локаций. Чтобы добавить район — достаточно добавить запись сюда
- * (и, при желании, новый landmark в scenes/art/Landmarks.tsx).
+ * (и, при желании, новые здания/ориентиры локации в `src/world3d`).
  */
 export const LOCATIONS: Record<LocationId, LocationDef> = {
   'gorky-park': {

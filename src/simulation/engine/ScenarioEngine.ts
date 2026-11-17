@@ -2,9 +2,21 @@ import { LOCATIONS } from '../../data/locations'
 import { nodeArea, placeNode, type NodeId } from '../../data/cityGraph'
 import { lightingMonth } from '../../features/city/lighting'
 import { weatherManager } from '../../features/weather/WeatherManager'
-import { useWorldStore, moscowNow } from '../../stores/worldStore'
-import type { DayPhase, EventKind, LocationId, ScenarioEvent, ScenarioMode, Season, TravelState } from '../../types'
+import { type PlanLeg, useWorldStore, moscowNow, type WorldState } from '../../stores/worldStore'
+import type {
+  DayPhase,
+  EventKind,
+  LocationId,
+  ScenarioEvent,
+  ScenarioMode,
+  Season,
+  TimeMode,
+  TravelState,
+} from '../../types'
 import { eventBus } from '../../utils/eventBus'
+import { mulberry32 } from '../../utils/math'
+import { beginEvent, pauseEvent, resumeEvent } from '../time/eventProgress'
+import { SimClock, TIME_SCALE, gameMinutes } from '../time/simClock'
 import { DailyRoutineGenerator, START_MINUTES } from '../scenarios/DailyRoutineGenerator'
 import { dayPhase, moscowMonth } from '../time/moscowTime'
 import { TravelStateMachine, canTransition } from '../travel/states'
@@ -16,6 +28,14 @@ function dateSeason(): Season {
 }
 
 const FADE_OUT_MS = 650
+/** разрыв длиннее — пропущенные события «бесшумные» (REALTIME_TRANSIT_AND_MOVEMENT_SPEC §1.3) */
+const CATCH_UP_GAP_MS = 2000
+/** страховка от бесконечного цикла при перемотке */
+const MAX_CATCH_UP_EVENTS = 2000
+const TICK_MS = 250
+/** как часто сверять игровые часы с московскими в режиме реальных часов (между сверками — по Date.now) */
+const REAL_RESYNC_MS = 60_000
+const DAY_MS = 86_400_000
 
 /**
  * Главный «режиссёр»: ведёт игровые часы, проигрывает очередь событий,
@@ -28,8 +48,22 @@ export class ScenarioEngine {
   private sm = new TravelStateMachine()
   private queue: ScenarioEvent[] = []
   private timer: ReturnType<typeof setInterval> | null = null
+  private worker: Worker | null = null
+  private clock: SimClock
+  private timeMode: TimeMode = 'x60'
+  /** показание игровых часов, минуты 0..1440 (дробные) */
+  private clockMin = 0
+  private lastMin = -1
+  private dayAcc = 0
+  /** игровое время, накопленное за время занавеса (применяется к следующему событию) */
+  private pending = 0
+  /** событие сменилось внутри текущего advance — записать eventElapsed/прогресс один раз */
+  private dirty = false
+  private wasPaused = false
+  private realBaseMs = 0
+  private realBaseMin = 0
+  private realDay = -1
   private timeouts = new Set<ReturnType<typeof setTimeout>>()
-  private last = 0
   private elapsed = 0
   private current: ScenarioEvent | null = null
   private lastKind: EventKind | null = null
@@ -39,26 +73,66 @@ export class ScenarioEngine {
   private stepAcc = 0
   private phase: DayPhase | null = null
 
-  constructor(private rng: () => number = Math.random) {
+  constructor(
+    private rng: () => number = Math.random,
+    private nowMs: () => number = () => Date.now(),
+  ) {
     this.routine = new DailyRoutineGenerator(rng)
-    this.events = new EventManager(rng)
+    // отдельный поток случайности: подписи EventManager не сдвигают сценарий (перемотка = непрерывный прогон)
+    this.events = new EventManager(mulberry32(Math.floor(rng() * 4294967296)))
+    this.clock = new SimClock(nowMs)
   }
 
   start(mode: ScenarioMode = useWorldStore.getState().scenarioMode) {
     this.stop()
-    this.last = performance.now()
-    this.timer = setInterval(() => this.loop(), 250)
+    this.clock.start()
+    this.wasPaused = false
+    try {
+      this.worker = new Worker(new URL('../time/ticker.worker.ts', import.meta.url), { type: 'module' })
+      this.worker.onmessage = () => this.loop()
+    } catch {
+      this.worker = null
+      this.timer = setInterval(() => this.loop(), TICK_MS)
+    }
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisible)
     this.reset(mode, true)
   }
 
   /** Подготовить стартовую сцену (для экрана приветствия) без запуска часов. */
   prepare(mode: ScenarioMode = useWorldStore.getState().scenarioMode) {
+    this.clock.start()
     this.reset(mode, true)
+  }
+
+  private onVisible = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') this.loop()
+  }
+
+  /** Сменить масштаб времени; текущее событие продолжается с того же места. */
+  setTimeMode(mode: TimeMode) {
+    if (useWorldStore.getState().timeMode !== mode) useWorldStore.getState().patch({ timeMode: mode })
+    this.syncScale()
+  }
+
+  private syncScale() {
+    const mode = useWorldStore.getState().timeMode
+    if (mode === this.timeMode && this.clock.scale === TIME_SCALE[mode]) return
+    this.timeMode = mode
+    this.clock.scale = TIME_SCALE[mode]
+    if (this.current) this.restartProgress()
+  }
+
+  private restartProgress() {
+    if (!this.current) return
+    beginEvent(useWorldStore.getState().eventKey, this.current.duration, this.clock.scale, this.elapsed, this.nowMs())
   }
 
   stop() {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
+    this.worker?.terminate()
+    this.worker = null
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible)
     this.timeouts.forEach(clearTimeout)
     this.timeouts.clear()
     this.busy = false
@@ -74,11 +148,16 @@ export class ScenarioEngine {
     this.lastKind = null
     this.streak = 0
     this.current = null
+    this.pending = 0
+    this.elapsed = 0
     this.sm.reset('IDLE')
     this.events.reset()
+    this.syncScale()
 
     const season: Season = mode === 'winter' ? 'winter' : dateSeason()
-    const minutes = s.clockMode === 'real' ? moscowNow().minutes : START_MINUTES[mode]
+    const minutes = this.isRealClock(s) ? this.realMin(true) : START_MINUTES[mode]
+    this.clockMin = minutes
+    this.lastMin = Math.floor(minutes)
     s.patch({ scenarioMode: mode, season, minutes, paused: false, travelState: 'IDLE' })
     if (mode === 'rainy') weatherManager.force('light-rain')
     else if (mode === 'winter') weatherManager.force('snow')
@@ -145,7 +224,7 @@ export class ScenarioEngine {
     }
     const cur = this.current
     const interruptible = !cur || cur.phase === 'activity'
-    let t = s.minutes
+    let t = this.clockMin
     let from = this.node
     let lastState: TravelState = cur?.travelState ?? 'IDLE'
     if (!interruptible && cur) t += Math.max(0, cur.duration - this.elapsed)
@@ -174,38 +253,87 @@ export class ScenarioEngine {
       from = next.to ?? from
       lastState = next.travelState ?? lastState
     }
-    if (interruptible) this.advance()
+    if (interruptible) this.nextEvent(false)
+    else this.publishPlan()
   }
 
-  private loop() {
-    const now = performance.now()
-    const dt = Math.min(1, (now - this.last) / 1000)
-    this.last = now
+  /**
+   * Цепочка поездки для карты: текущее событие и подряд идущие за ним события поездки из очереди
+   * (до первого занятия). Хранится в worldStore.plan.
+   */
+  private publishPlan() {
+    const legs: PlanLeg[] = []
+    const add = (ev: ScenarioEvent, current: boolean) => {
+      if (!ev.trip || !ev.from || !ev.to || !ev.mode) return false
+      legs.push({
+        from: ev.from,
+        to: ev.to,
+        mode: ev.mode,
+        line: ev.line,
+        dest: ev.trip.to,
+        duration: ev.duration,
+        current,
+      })
+      return true
+    }
+    if (this.current) add(this.current, true)
+    for (const ev of this.queue) if (!add(ev, false)) break
+    useWorldStore.setState({ plan: legs })
+  }
+
+  private isRealClock(s: WorldState): boolean {
+    return s.clockMode === 'real' || s.timeMode === 'realtime'
+  }
+
+  /** Московские минуты суток: Intl вызывается раз в минуту, между сверками — по стенным часам. */
+  private realMin(force: boolean): number {
+    const now = this.nowMs()
+    if (force || now < this.realBaseMs || now - this.realBaseMs >= REAL_RESYNC_MS) {
+      const p = moscowNow(new Date(now))
+      const day = Math.floor(Date.UTC(p.parts.year, p.parts.month - 1, p.parts.day) / DAY_MS)
+      if (this.realDay !== -1 && day > this.realDay) this.dayAcc += day - this.realDay
+      this.realDay = day
+      this.realBaseMs = now
+      this.realBaseMin = p.minutes
+    }
+    return (this.realBaseMin + (now - this.realBaseMs) / 60000) % 1440
+  }
+
+  /** Один шаг от стенных часов; вызывается воркером, visibilitychange и (в тестах) напрямую. */
+  loop() {
+    const dMs = this.clock.stepMs()
     const s = useWorldStore.getState()
-    if (!s.started || s.paused) return
-    this.tick(dt)
+    if (!s.started || s.paused) {
+      if (!this.wasPaused) {
+        this.wasPaused = true
+        pauseEvent(this.nowMs())
+      }
+      return
+    }
+    if (this.wasPaused) {
+      this.wasPaused = false
+      resumeEvent(this.nowMs())
+    }
+    const silent = dMs > CATCH_UP_GAP_MS
+    if (!silent) {
+      const dt = dMs / 1000
+      this.events.tick(dt)
+      this.footsteps(dt, s)
+    }
+    this.advance(gameMinutes(dMs, this.clock.scale), silent)
   }
 
+  /** Совместимость: dt — реальные секунды, шаг «как будто» прошло dt секунд. */
   tick(dt: number) {
+    this.syncScale()
     const s = useWorldStore.getState()
     this.events.tick(dt)
-    // игровые часы
-    let minutes: number
-    if (s.clockMode === 'real') minutes = moscowNow().minutes
-    else {
-      const rate = this.current?.clockRate ?? 1
-      minutes = s.minutes + dt * rate
-    }
-    if (minutes >= 1440) {
-      minutes -= 1440
-      s.patch({ dayCount: s.dayCount + 1 })
-    }
-    s.patch({ minutes })
-    this.updateDayPhase(minutes, s.season)
+    this.footsteps(dt, s)
+    this.advance(gameMinutes(dt * 1000, this.clock.scale), false)
+  }
 
+  private footsteps(dt: number, s: WorldState) {
     if (this.busy || !this.current) return
-    this.elapsed += dt
-    // шаги для звука
     if (this.current.pose === 'walk' && LOCATIONS[s.location].outdoor) {
       this.stepAcc += dt
       if (this.stepAcc > 0.55) {
@@ -215,7 +343,71 @@ export class ScenarioEngine {
         })
       }
     }
-    if (this.elapsed >= this.current.duration) this.advance()
+  }
+
+  private addClock(d: number) {
+    this.clockMin += d
+    if (this.clockMin >= 1440) {
+      const days = Math.floor(this.clockMin / 1440)
+      this.clockMin -= days * 1440
+      this.dayAcc += days
+    }
+  }
+
+  /** dGame — игровые минуты «времени событий». silent — идёт перемотка после разрыва. */
+  private advance(dGame: number, silent: boolean) {
+    this.syncScale()
+    const s = useWorldStore.getState()
+    const realClock = this.isRealClock(s)
+    let left = dGame
+    let guard = 0
+    if (!this.current) this.addClock(left)
+    while (left > 0 && this.current && guard++ < MAX_CATCH_UP_EVENTS) {
+      if (this.busy) {
+        this.pending += left // занавес: время не теряется, достанется следующему событию
+        left = 0
+        break
+      }
+      const rate = realClock ? 1 : (this.current.clockRate ?? 1)
+      const remain = this.current.duration - this.elapsed
+      if (left < remain) {
+        this.elapsed += left
+        this.addClock(left * rate)
+        left = 0
+        break
+      }
+      left -= remain
+      this.addClock(remain * rate)
+      this.elapsed = this.current.duration
+      if (!this.nextEvent(silent && left > 0)) break
+    }
+    if (left > 0 && guard >= MAX_CATCH_UP_EVENTS && !this.busy) this.addClock(left)
+    this.publishClock(s, realClock, silent)
+  }
+
+  /** §1.5: minutes — при смене целой минуты; eventElapsed/прогресс — раз на смену события. */
+  private publishClock(s: WorldState, realClock: boolean, resync: boolean) {
+    if (realClock) this.clockMin = this.realMin(resync)
+    let patch: Partial<WorldState> | null = null
+    const fl = Math.floor(this.clockMin)
+    if (fl !== this.lastMin) {
+      this.lastMin = fl
+      patch = { minutes: this.clockMin }
+    }
+    if (this.dayAcc) {
+      patch = patch ?? {}
+      patch.dayCount = s.dayCount + this.dayAcc
+      this.dayAcc = 0
+    }
+    if (this.dirty) {
+      this.dirty = false
+      patch = patch ?? {}
+      patch.eventElapsed = this.elapsed
+      this.restartProgress()
+    }
+    if (!patch) return
+    s.patch(patch)
+    if (patch.minutes !== undefined) this.updateDayPhase(this.clockMin, s.season)
   }
 
   private updateDayPhase(minutes: number, season: Season) {
@@ -227,11 +419,12 @@ export class ScenarioEngine {
     eventBus.emit('day-phase', { phase, prev })
   }
 
-  private advance() {
+  /** Следующее событие очереди (при пустой очереди — генерирует). false — события нет. */
+  private nextEvent(silent: boolean): boolean {
     if (!this.queue.length) {
       const s = useWorldStore.getState()
       this.queue = this.routine.next({
-        minutes: s.minutes,
+        minutes: this.clockMin,
         mode: s.scenarioMode,
         weather: s.weatherKind,
         anchor: nodeArea(this.node),
@@ -240,7 +433,7 @@ export class ScenarioEngine {
         streak: this.streak,
       })
     }
-    this.playNext(false)
+    return this.playNext(false, silent)
   }
 
   private later(fn: () => void, ms: number) {
@@ -251,9 +444,10 @@ export class ScenarioEngine {
     this.timeouts.add(t)
   }
 
-  private playNext(instant: boolean) {
-    const ev = this.queue.shift()
-    if (!ev) return
+  private playNext(instant: boolean, silent = false): boolean {
+    const next = this.queue.shift()
+    if (!next) return false
+    const ev: ScenarioEvent = silent ? { ...next, silent: true } : next
     const s = useWorldStore.getState()
     const apply = () => {
       if (ev.phase === 'activity') {
@@ -267,16 +461,20 @@ export class ScenarioEngine {
       this.current = ev
       this.node = ev.to ?? this.node
       this.elapsed = 0
+      this.dirty = true
       useWorldStore.setState((st) => ({
         location: ev.location,
         transitionTo: null,
         event: ev,
         pose: ev.pose,
         eventKey: st.eventKey + 1,
+        eventElapsed: 0,
         node: this.node,
         travelState: state,
       }))
-      if (ev.announce !== false) useWorldStore.getState().setCaption(ev.caption)
+      this.restartProgress()
+      if (!silent) this.publishPlan()
+      if (!silent && ev.announce !== false) useWorldStore.getState().setCaption(ev.caption)
       if (ev.phase) {
         eventBus.emit('travel-state', {
           state,
@@ -285,18 +483,24 @@ export class ScenarioEngine {
           mode: ev.mode ?? null,
           location: ev.location,
           duration: ev.duration,
+          ...(silent ? { silent: true } : null),
         })
-        for (const cue of ev.sounds ?? [])
-          eventBus.emit('travel-sound', { cue, phase: ev.phase, mode: ev.mode ?? null })
+        if (!silent)
+          for (const cue of ev.sounds ?? [])
+            eventBus.emit('travel-sound', { cue, phase: ev.phase, mode: ev.mode ?? null })
       }
       this.busy = false
+    }
+    if (silent) {
+      apply() // перемотка: без занавеса и без звуков перехода
+      return true
     }
     if (instant || ev.location === s.location) {
       const from = s.location
       apply()
       if (instant || from !== ev.location)
         eventBus.emit('location-change', { from: instant ? null : from, to: ev.location })
-      return
+      return true
     }
     // кинематографичный переход: затемнение → смена сцены → проявление
     this.busy = true
@@ -305,7 +509,11 @@ export class ScenarioEngine {
       const from = useWorldStore.getState().location
       apply() // сбрасывает transitionTo → занавес растворяется
       eventBus.emit('location-change', { from, to: ev.location })
+      const p = this.pending
+      this.pending = 0
+      if (p > 0) this.advance(p, false) // время занавеса достаётся новому событию
     }, FADE_OUT_MS)
+    return true
   }
 }
 
